@@ -1,0 +1,104 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="FB_SDO_READ" Id="{bc770c6b-7fd8-494f-8e1b-bef0b0e15641}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SDO_READ
+VAR_INPUT
+	bExecute						:	BOOL;
+	sNetID							:	AmsNetID;
+	nSlaveAddr						:	UINT;
+END_VAR
+VAR_OUTPUT
+	Buffer							:	DINT;
+	bDone							:	BOOL;
+	bBusy							:	BOOL;
+	bError							:	BOOL;
+	nErrId							:	UDINT;	
+END_VAR
+VAR
+	CoeSdoRead 					:	FB_EcCoeSdoRead;
+	T_sNetID					:	T_AmsNetID;
+	nSubIndex					:	BYTE;
+	nIndex						:	WORD;
+	
+	state						:	INT	:= 0;
+END_VAR
+(*				SDO Read功能细则 Version20180828		
+	功能描述:单次通过COE SDO进行读操作
+	使用方法:对功能块FB_SDO_READ进行实例化并调用
+	接口定义:
+			输入:
+				bExecute:开关;
+				sNeiID:对应关节EtherCAT从站NetID,默认赋值为Drive->InfoData->AdsAddr->netID;
+				nSlaveAddr:对应关节EtherCAT从站port号,默认赋值Drive->InfoData->AdsAddr->port.
+			输出:
+				Buffer:SDO读取缓存,DINT型具体内容对应读取方式不同而不同
+				bDone:功能快完成标志位
+				bBusy:功能快正忙标志位
+				bError:功能快错误标志位
+				nErrId:错误代码位,UDINT型,无错误时为0
+	实现细则:
+			1.所有SDO读操作对应EtherCAT从站COE SDO字典中0x2030索引
+			2.单个周期读取得到的Buffer缓存内容请参考"SDO操作规范细则".
+	*)]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[T_sNetID := AmsNetID_TO_TAmsNetID(sNetID);
+//temporary
+//nSubIndex := 02;
+nIndex := 16#2030;
+
+IF NOT bExecute THEN
+	state := 0;
+END_IF
+
+CASE state OF
+0://initialization
+	CoeSdoRead(bExecute:=FALSE);
+	
+	bDone := FALSE;
+	bBusy := FALSE;
+	bError := FALSE;
+	nErrId := 0;
+	
+	IF bExecute THEN
+		state := 10;
+	END_IF
+	
+10://Read SDO
+	bDone := FALSE;
+	bBusy := TRUE;
+	bError := FALSE;
+	nErrId := 0;
+	
+	CoeSdoRead(
+		sNetId:= T_sNetID, 
+		nSlaveAddr:= nSlaveAddr, 
+		nSubIndex:= 00, 
+		nIndex:= nIndex, 
+		pDstBuf:= ADR(Buffer), 
+		cbBufLen:= SIZEOF(Buffer), 
+		bExecute:= TRUE, 
+		bBusy=> , 
+		bError=> , 
+		nErrId=> );
+		
+	IF NOT CoeSdoRead.bBusy AND NOT CoeSdoRead.bError THEN
+		CoeSdoRead(bExecute:=FALSE);
+		state := 20;
+	ELSIF CoeSdoRead.bError THEN
+		nErrId := CoeSdoRead.nErrId;
+		bError := TRUE;
+	END_IF
+	
+20://finish
+	bDone := TRUE;
+	bBusy := FALSE;
+	bError := FALSE;
+	nErrId := 0;	
+END_CASE]]></ST>
+    </Implementation>
+    <LineIds Name="FB_SDO_READ">
+      <LineId Id="3" Count="52" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

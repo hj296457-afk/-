@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="AmsNetID_TO_TAmsNetID" Id="{5801596a-d2ca-4f92-b341-d7bee2be61c2}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION AmsNetID_TO_TAmsNetID : T_AmsNetID
+VAR_INPUT
+	sNetId 						:	AmsNetID;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[AmsNetID_TO_TAmsNetID := CONCAT(BYTE_TO_STRING(sNetId[0]),'.');
+AmsNetID_TO_TAmsNetID := CONCAT(AmsNetID_TO_TAmsNetID, BYTE_TO_STRING(sNetId[1]));	
+AmsNetID_TO_TAmsNetID := CONCAT(AmsNetID_TO_TAmsNetID,'.');
+AmsNetID_TO_TAmsNetID := CONCAT(AmsNetID_TO_TAmsNetID, BYTE_TO_STRING(sNetId[2]));	
+AmsNetID_TO_TAmsNetID := CONCAT(AmsNetID_TO_TAmsNetID,'.');
+AmsNetID_TO_TAmsNetID := CONCAT(AmsNetID_TO_TAmsNetID, BYTE_TO_STRING(sNetId[3]));	
+AmsNetID_TO_TAmsNetID := CONCAT(AmsNetID_TO_TAmsNetID,'.');
+AmsNetID_TO_TAmsNetID := CONCAT(AmsNetID_TO_TAmsNetID, BYTE_TO_STRING(sNetId[4]));	
+AmsNetID_TO_TAmsNetID := CONCAT(AmsNetID_TO_TAmsNetID,'.');
+AmsNetID_TO_TAmsNetID := CONCAT(AmsNetID_TO_TAmsNetID, BYTE_TO_STRING(sNetId[5]));]]></ST>
+    </Implementation>
+    <LineIds Name="AmsNetID_TO_TAmsNetID">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

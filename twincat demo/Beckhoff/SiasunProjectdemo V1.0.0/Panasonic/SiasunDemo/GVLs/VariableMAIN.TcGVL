@@ -1,0 +1,45 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4018.5">
+  <GVL Name="VariableMAIN" Id="{0e939cad-4538-4bde-b3c2-f1b6e7fda8ce}">
+    <Declaration><![CDATA[VAR_GLOBAL
+	
+//Machine descrption
+CurrentJob:INT;
+CurrentJobString:STRING(80);//Say in which state
+
+//If Initilized
+IfInitilized:BOOL:=FALSE;
+//If Powered On
+IfPowerOn:BOOL:=FALSE;
+//If ExtFeed Enabled
+IfExtFeedEnabled:BOOL:=FALSE;
+//If in position mode(position/torque)
+IfWorkModePosition:BOOL:=TRUE;
+//If have hardware error
+IfHaveHardWareError:BOOL:=FALSE;
+//If have software error
+IfHaveSoftWareError:BOOL:=FALSE;
+//If in moving
+IfMoving:BOOL:=FALSE;
+
+//Current Bias(also use encoder value)
+CurrentBias:ARRAY[0..10]OF LREAL;
+//Current Write Bias Symbol
+CurrentBiasWriteSymbol:INT;
+//Current Read Bias Symbol
+CurrentBiasReadSymbol:INT;
+
+//Real Axis Current Position
+CurrentPosition:ARRAY[0..10]OF LREAL;//Read from axis!!!!!!!!!!!!!!!!!!!
+CurrentPositionReal:ARRAY[0..10]OF LREAL;//Angle
+CurrentPositionRealRadius:ARRAY[0..10]OF LREAL;//Radius
+
+//Real Axis Current Speed
+CurrentSpeed:ARRAY[0..10]OF LREAL;//Read from axis!!!!!!!!!!!!!!!!!!!
+CurrentSpeedReal:ARRAY[0..10]OF LREAL;//Joint Speed Angle
+CurrentSpeedRealRadius:ARRAY[0..10]OF LREAL;//Joint Speed Radius
+CurrentSpeedRealRadiusBefore:ARRAY[0..10]OF LREAL;//Joint Speed Radius Before(To calculate acceleration)
+
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

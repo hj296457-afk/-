@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="Struct_AxisInfo" Id="{fa3000ed-bf80-4141-8955-33c23a6701e7}">
+    <Declaration><![CDATA[TYPE Struct_AxisInfo :
+STRUCT
+	AxisNum								:	INT;
+	Axis_EcComOp						:	BOOL;
+	AxisStatus							:	Struct_AxisStatus;
+	Axis_OpMode							:	SINT;
+	Axis_TargetMode						:	SINT;
+	PositionCmd							:	LREAL;
+	VelocityCmd							:	LREAL;
+	TorqueCmd							:	INT;
+	ActualPosition						:	LREAL;	
+	ActualPositionCNT					:	LREAL;	// cnt
+	ActualVelocity						:	LREAL;	// °/s
+	ActualAcceleration					:	LREAL;	// °/s2
+	ActualTorque						:	INT;
+	AuxiliaryPosition					:	DINT;	
+	AuxiliaryPositionDiff				:	DINT;   // INC 位置微分
+	AuxiliaryPositionOld				:	DINT;
+	DSPBoardTemperature					:	LREAL;
+	Error								:	BOOL;
+	ErrId								:	DINT;
+	ErrId_Hex							:	STRING;
+	ServoErrType						:	STRING;
+	ServoError							:	BOOL;
+	PLC_Version							:	Struct_PLCVersion;
+	
+	AxisInfoDataStateJoint 				:	UINT;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

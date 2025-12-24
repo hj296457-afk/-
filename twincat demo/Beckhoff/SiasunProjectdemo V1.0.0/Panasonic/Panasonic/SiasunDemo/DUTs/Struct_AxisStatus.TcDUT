@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="Struct_AxisStatus" Id="{44a4a640-91d6-4532-9d8f-bf8c53d774ca}">
+    <Declaration><![CDATA[TYPE Struct_AxisStatus :
+STRUCT
+	Ready										:	BOOL:=FALSE;
+	ConfigDone									:	BOOL:=FALSE;
+	Enabled										:	BOOL;
+	Standstill									:	BOOL;
+	Hasjob										:	BOOL;
+	NotMoving									:	BOOL;
+	SystemReady									:	BOOL:=TRUE;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

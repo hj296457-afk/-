@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="Struct_AxisXmlRW" Id="{58ce9b2c-ebd2-4731-acd5-4201a7372793}">
+    <Declaration><![CDATA[TYPE Struct_AxisXmlRW :
+STRUCT
+//  xml read 
+
+//ServoConfig/Download/Upload/ReadServoVersion-EtherCat/SelfCheckMode
+	Download_State								:	INT := 0;
+	ServoParameters_temp						:	ARRAY[0..99] OF PARA;
+	
+	XmlRead										:	FB_XmlSrvRead;
+	Read_State									:	UINT := 0;
+	CRC_Cal										:	UDINT;
+	CRC_Read									:	UDINT;
+	FilePath									:	ARRAY[0..6] OF STRING := ['C:\SiasunRobot\ServoConfig\Axis1.xml',
+																			  'C:\SiasunRobot\ServoConfig\Axis2.xml',
+																			  'C:\SiasunRobot\ServoConfig\Axis3.xml',
+																			  'C:\SiasunRobot\ServoConfig\Axis4.xml',
+																			  'C:\SiasunRobot\ServoConfig\Axis5.xml',
+																			  'C:\SiasunRobot\ServoConfig\Axis6.xml',
+																			  'C:\SiasunRobot\ServoConfig\Axis7.xml'];
+	Config_State								:	INT := 0;
+	Config_Para									:	PARA;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

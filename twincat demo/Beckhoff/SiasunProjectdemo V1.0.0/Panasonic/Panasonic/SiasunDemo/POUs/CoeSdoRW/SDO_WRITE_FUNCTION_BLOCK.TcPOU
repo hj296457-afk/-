@@ -1,0 +1,145 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="SDO_WRITE_FUNCTION_BLOCK" Id="{8ccd829a-908e-4bb6-9aa8-f593f9d77d81}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK SDO_WRITE_FUNCTION_BLOCK
+VAR_INPUT
+	bExecute					:	BOOL;
+	id							:	DINT;
+	value						:	REAL;
+	qFmt						:	DINT;
+	
+END_VAR
+VAR_OUTPUT
+	bDone						:	BOOL;
+	bBusy 						: 	BOOL;
+	bError						: 	BOOL;
+	nErrId						: 	UDINT;
+END_VAR
+VAR
+	CoeSdoWrite					:	FB_EcCoeSdoWrite;
+	
+	T_sNetID					:	T_AmsNetID;
+	sNetID			AT%I*		:	AmsNetID;
+	nSlaveAddr		AT%I*		:	UINT;
+	nSubIndex					:	BYTE;
+	nIndex						:	WORD;
+	
+	Buffer						:	ARRAY[0..2] OF DINT;
+	
+	state						:	INT	:= 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[T_sNetid := CONCAT(BYTE_TO_STRING(sNetId[0]),'.');
+T_sNetid := CONCAT(T_sNetId, BYTE_TO_STRING(sNetId[1]));	T_sNetid := CONCAT(T_sNetId,'.');
+T_sNetid := CONCAT(T_sNetId, BYTE_TO_STRING(sNetId[2]));	T_sNetid := CONCAT(T_sNetId,'.');
+T_sNetid := CONCAT(T_sNetId, BYTE_TO_STRING(sNetId[3]));	T_sNetid := CONCAT(T_sNetId,'.');
+T_sNetid := CONCAT(T_sNetId, BYTE_TO_STRING(sNetId[4]));	T_sNetid := CONCAT(T_sNetId,'.');
+T_sNetid := CONCAT(T_sNetId, BYTE_TO_STRING(sNetId[5]));
+//temporary
+//nSubIndex := 02;
+nIndex := 16#2020;
+
+//component trasformation
+Buffer[0] := SHL(16#02,24)+SHL(4,16)+SHL(id,8)+1;					//head of mailbox
+Buffer[1] := REAL_TO_DINT(value*EXPT(10,qFmt));						//value
+Buffer[2] := qFmt;													//q-value
+
+IF NOT bExecute THEN
+	state := 0;
+END_IF
+
+CASE state OF
+0://initialization
+	CoeSdoWrite(bExecute:=FALSE);
+	
+	bDone := FALSE;
+	bBusy := FALSE;
+	bError := FALSE;
+	nErrId := 0;
+	
+	IF bExecute THEN
+		state := 10;
+	END_IF
+	
+10://write head
+	bDone := FALSE;
+	bBusy := TRUE;
+	bError := FALSE;
+	nErrId := 0;
+	
+	CoeSdoWrite(
+		sNetId:= T_sNetId, 
+		nSlaveAddr:= nSlaveAddr, 
+		nSubIndex:= 01, 
+		nIndex:= nIndex, 
+		pSrcBuf:= ADR(Buffer[0]), 
+		cbBufLen:= SIZEOF(Buffer[0]), 
+		bExecute:= TRUE,
+		bBusy=> , 
+		bError=> , 
+		nErrId=> );
+		
+	IF NOT CoeSdoWrite.bBusy AND NOT CoeSdoWrite.bError THEN
+		CoeSdoWrite(bExecute:=FALSE);
+		state := 20;
+	ELSIF CoeSdoWrite.bError THEN
+		nErrId := CoeSdoWrite.nErrId;
+		bError := TRUE;
+	END_IF
+
+20://write value
+	CoeSdoWrite(
+		sNetId:= T_sNetId, 
+		nSlaveAddr:= nSlaveAddr, 
+		nSubIndex:= 02, 
+		nIndex:= nIndex, 
+		pSrcBuf:= ADR(Buffer[1]), 
+		cbBufLen:= SIZEOF(Buffer[1]), 
+		bExecute:= TRUE,
+		bBusy=> , 
+		bError=> , 
+		nErrId=> );
+		
+	IF NOT CoeSdoWrite.bBusy AND NOT CoeSdoWrite.bError THEN
+		CoeSdoWrite(bExecute:=FALSE);
+		state := 30;
+	ELSIF CoeSdoWrite.bError THEN
+		nErrId := CoeSdoWrite.nErrId;
+		bError := TRUE;
+	END_IF
+	
+30://write q-value
+	CoeSdoWrite(
+		sNetId:= T_sNetId, 
+		nSlaveAddr:= nSlaveAddr, 
+		nSubIndex:= 03, 
+		nIndex:= nIndex, 
+		pSrcBuf:= ADR(Buffer[2]), 
+		cbBufLen:= SIZEOF(Buffer[2]), 
+		bExecute:= TRUE,
+		bBusy=> , 
+		bError=> , 
+		nErrId=> );
+		
+	IF NOT CoeSdoWrite.bBusy AND NOT CoeSdoWrite.bError THEN
+		CoeSdoWrite(bExecute:=FALSE);
+		state := 40;
+	ELSIF CoeSdoWrite.bError THEN
+		nErrId := CoeSdoWrite.nErrId;
+		bError := TRUE;
+	END_IF
+
+40:
+	bDone := TRUE;
+	bBusy := FALSE;
+	bError := FALSE;
+	nErrId := 0;
+END_CASE]]></ST>
+    </Implementation>
+    <LineIds Name="SDO_WRITE_FUNCTION_BLOCK">
+      <LineId Id="3" Count="104" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

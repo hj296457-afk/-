@@ -1,0 +1,78 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4018.5">
+  <GVL Name="FileHandler" Id="{41fd0859-a9b1-4d7e-8942-fe9dbaaf6db9}">
+    <Declaration><![CDATA[VAR_GLOBAL
+
+ReadORWriteTick:LREAL;
+ReadORWriteTickTotal:LREAL:=0.1;
+
+//The Value to be read or write
+ValueWrite : ARRAY [0..5] OF LREAL;
+ValueRead : ARRAY [0..5] OF LREAL;
+
+
+TestValueWriteString:STRING(80);
+TestValueReadString:STRING(80);
+
+//FileOpenModeForWhat(Read or write)
+FileOpenMode:DWORD;
+
+//File Read or Write Path
+FileReadAndWritePath0:STRING(80);
+
+//If Open file
+FileOpenTrigger:BOOL;
+
+//If Close file
+FileCloseTrigger:BOOL;
+
+//If Write file
+FilePutsTrigger:BOOL;
+
+//If Read file
+FileGetsTrigger:BOOL;
+
+
+FB_FileOpen_0: FB_FileOpen;
+FileOpenBusy: BOOL;
+FileOpenError: BOOL;
+FileOpenErrorID: UDINT;
+hFile: UINT;
+
+FB_FileClose_0: FB_FileClose;
+FileCloseBusy: BOOL;
+FileCloseError: BOOL;
+FileCloseErrorID: UDINT;
+
+FB_FilePuts_0: FB_FilePuts;
+FilePutsBusy: BOOL;
+FilePutsError: BOOL;
+FilePutsErrorID: UDINT;
+
+FB_FileGets_0: FB_FileGets;
+FileGetsBusy: BOOL;
+FileGetsError: BOOL;
+FileGetsErrorID: UDINT;
+FileGetsEOF: BOOL;
+	
+
+FB_FileWrite_0: FB_FileWrite;
+FileWriteBusy: BOOL;
+FileWriteError: BOOL;
+FileWriteErrorID: UDINT;
+FileWriteCB: UDINT;
+
+FB_FileRead_0: FB_FileRead;
+FileReadBusy: BOOL;
+FileReadError: BOOL;
+FileReadErrorID: UDINT;
+FileReadCB: UDINT;
+FileReadEOF: BOOL;
+
+//File Read and Write DATA
+fileDataWriteLREAL: ARRAY[0..5] OF LREAL;
+fileDataReadLREAL: ARRAY[0..5] OF LREAL;
+
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

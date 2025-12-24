@@ -1,0 +1,100 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="FB_SDO_WRITE" Id="{7bea32c9-0375-4b5b-af99-071255eb6f7a}" SpecialFunc="None">
+    <Declaration><![CDATA[(*					Version20180802					
+					自家伺服SDO下载				
+调用方式: bExecute上升沿触发, 输入固定格式Buffer,
+需要根据特定情况数据打包.						
+使用方式: 当进行SDO操作时(R/W),先要进行头文件编写
+头文件格式对应Buffer所含四个字节分别为:1.第一字节
+为操作请求位, 1为写, 0为读; 2.第二字节为参数序号位,
+当且仅当请求下载数据为控制器参数时有效;3,第三字节为
+数据长度类, 默认值为4;4.第四字节为地址段类, 当对控
+制器参数进行操作时默认为16#02,进行频响分析时为16#40,
+其余待定.
+完成上述头文件下载后可根绝特定需求接着进行参数下载/
+上传造作*)
+FUNCTION_BLOCK FB_SDO_WRITE
+VAR_INPUT
+	bExecute						:	BOOL;
+	sNetID							:	AmsNetID;
+	nSlaveAddr						:	UINT;
+	Buffer							:	DINT;
+END_VAR
+VAR_OUTPUT
+	bDone							:	BOOL;
+	bBusy							:	BOOL;
+	bError							:	BOOL;
+	nErrId							:	UDINT;	
+END_VAR
+VAR
+	CoeSdoWrite					:	FB_EcCoeSdoWrite;
+	T_sNetID					:	T_AmsNetID;
+	nSubIndex					:	BYTE;
+	nIndex						:	WORD;
+	
+	state						:	INT	:= 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[T_sNetID := AmsNetID_TO_TAmsNetID(sNetID);
+//temporary
+//nSubIndex := 02;
+nIndex := 16#2020;
+
+IF NOT bExecute THEN
+	state := 0;
+END_IF
+
+CASE state OF
+0://initialization
+	CoeSdoWrite(bExecute:=FALSE);
+	
+	bDone := FALSE;
+	bBusy := FALSE;
+	bError := FALSE;
+	nErrId := 0;
+	
+	IF bExecute THEN
+		state := 10;
+	END_IF
+	
+10://Write SDO
+	bDone := FALSE;
+	bBusy := TRUE;
+	bError := FALSE;
+	nErrId := 0;
+	
+	CoeSdoWrite(
+		sNetId:= T_sNetId, 
+		nSlaveAddr:= nSlaveAddr, 
+		nSubIndex:= 0, 
+		nIndex:= nIndex, 
+		pSrcBuf:= ADR(Buffer), 
+		cbBufLen:= SIZEOF(Buffer), 
+		bExecute:= TRUE,
+		bBusy=> , 
+		bError=> , 
+		nErrId=> );
+		
+	IF NOT CoeSdoWrite.bBusy AND NOT CoeSdoWrite.bError THEN
+		CoeSdoWrite(bExecute:=FALSE);
+		state := 20;
+	ELSIF CoeSdoWrite.bError THEN
+		nErrId := CoeSdoWrite.nErrId;
+		bError := TRUE;
+	END_IF
+
+20://finish
+	bDone := TRUE;
+	bBusy := FALSE;
+	bError := FALSE;
+	nErrId := 0;
+END_CASE]]></ST>
+    </Implementation>
+    <LineIds Name="FB_SDO_WRITE">
+      <LineId Id="3" Count="52" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

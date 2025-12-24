@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="Struct_MotionPara" Id="{562fbf9c-7029-4f3f-ad38-e82c45471c98}">
+    <Declaration><![CDATA[TYPE Struct_MotionPara :
+STRUCT
+	TargetPosition						:	LREAL;
+	TargetPosition1						:	LREAL;
+	TargetPosition2						:	LREAL;
+	ReverseMotion_Velocity				:	LREAL	;
+	AbsMotion_Velocity					:	LREAL	;
+	TargetVelocity						:	LREAL	:=40;
+	TargetAcceleration					:	LREAL	:=200;
+	TargetDeceleration					:	LREAL	:=200;
+	TargetJerk							:	LREAL	:=2000;
+	TargetDistance						:	LREAL;
+	StopDeceleration					:	LREAL	:=2000;
+	Targetorque							:	INT;
+	Repetitive							:	BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="Para" Id="{a34509a8-9b7a-4399-8ba9-a0ee5a6d75b0}">
+    <Declaration><![CDATA[TYPE Para :
+STRUCT
+	Id				:	DINT	:= -1;
+	Name			:	STRING	:= 'None';
+	Value			:	REAL	:= -999;
+	qFmt			:	DINT	:= -999;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

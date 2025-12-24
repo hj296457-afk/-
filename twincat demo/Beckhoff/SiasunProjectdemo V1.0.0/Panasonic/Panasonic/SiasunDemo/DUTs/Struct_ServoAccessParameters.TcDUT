@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="Struct_ServoAccessParameters" Id="{804582e8-f543-41ff-b146-41bf8d11adeb}">
+    <Declaration><![CDATA[TYPE Struct_ServoAccessParameters :
+STRUCT
+	//Servo Cmd
+	ServoMode							:	PARA;
+	IsLocalCmd							:	PARA;
+	ServoOn								:	PARA;
+	RequestParaFlag						:	PARA;
+	//Position Loop Control
+	BandWidth_Vel						:	PARA;
+	BandWidth_Posi						:	PARA;
+	BandWidth_Posi_int					:	PARA;
+	Low_Pass_BW							:	PARA;
+	DriectionReverse					:	PARA;
+	//Self-Defined
+	StatusRequest						:	PARA;
+	//Error Protection
+	Over_Speed							:	PARA;
+	Over_PE								:	PARA;
+	Under_Volt							:	PARA;
+	Over_Volt							:	PARA;
+	Over_Curr							:	PARA;
+	Over_CrossPulseErr					:	PARA;
+	//Offline Test Parameters
+	Offline_Pos							:	PARA;
+	Offline_Vel							:	PARA;
+	Offline_Acc							:	PARA;
+	//Fault Mask
+	FaultMask_Low						:	PARA;
+	FaultMask_High						:	PARA;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

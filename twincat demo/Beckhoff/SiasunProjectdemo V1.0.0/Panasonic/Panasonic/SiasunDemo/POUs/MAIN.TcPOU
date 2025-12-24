@@ -1,0 +1,791 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="MAIN" Id="{ac375706-1ac4-454d-acf5-1d3317acf941}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	//  YKS 20210710
+	// get plc cycle
+	fb_GetCurrentTaskIndex						:	GETCURTASKINDEX;
+	TaskIndex									:	BYTE;
+	PLCsycletime								:	UDINT := 0; // ms get plc  syc cycle time
+	// siasun servo work state machine	 
+	SiasunServoTestStart		:	BOOL:=FALSE;  //  Init axis	
+	num							:	INT;
+	i,j							:	UDINT;
+	
+	SIASUNservoWorkState	:	ARRAY[0..(AxisNumMax-1)] OF INT  := [AxisNumMax(0)];  // main program  state machine
+	AxisOp 					:  	ARRAY[0..(AxisNumMax-1)] OF  FB_AxisOperate;	 // axis  operate function   important
+	AxisInfo				:	ARRAY[0..(AxisNumMax-1)] OF  Struct_AxisInfo;   // axis infomation of PLC 
+	AxisPowerDone			:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];  // 48Vpower success flag  true: success
+	Axis_EcComOp 			:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];  // communication success flag  true: success 
+	ConfigDoneTrig		
+
+	:	ARRAY[0..(AxisNumMax-1)] OF  R_trig;	// para download success trig
+	
+	EndInfo					:	Struct_EndDrive;   // axis infomation of PLC 
+	End_Foe_load			:	FB_EcFoeLoad;
+	End_config_name   		:	STRING(255):='config.tar.gz';
+	End_config_path			:	STRING(255);
+	End_T_sNetID			:	T_AmsNetID;
+	bEndConfigUploadSuccess	:	BOOL:=FALSE;
+	bEndConfigExtract		:	BOOL:=FALSE;	
+	
+	//-----------motion task state ----------------------
+	//--  0: Not moving  1: jogging   
+	//--   11:  torque mode drive
+	AxisMotionTaskState		:	ARRAY[0..(AxisNumMax-1)] OF  INT := [AxisNumMax(0)] ;  // motion task state machine
+	AxisMotionPara			:	ARRAY[0..(AxisNumMax-1)] OF  Struct_MotionPara ;	// motion cmd set		
+	
+	// HMI var
+	HMI_AxisEnable			:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// handle axis enable
+	HMI_Abs_Motion			:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// handle axis Absolute Motion
+	HMI_Reverse_Motion		:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];
+	HMI_Tra_Motion			:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// handle axis Trajectory Motion
+	HMI_Axis_reset			:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];   // handle axis reset
+	HMI_AxisJogFoward		:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// handle axis jog+
+	HMI_AxisJogBackwards	:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// handle axis jog-
+	HMI_AxisStop			:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// handle axis stop
+	HMI_Back_Motion         :	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// handle axis back intpsition Motion
+	
+	HMI_CurrentControlOfEnable 		:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// handle current mode enable
+	HMI_CurrentControlMove			:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// handle current mode move
+	HMI_AxisCurrentControlFlag	 	:	ARRAY[0..(AxisNumMax-1)] OF  BOOL := [AxisNumMax(FALSE)];	// current mode enable success	
+	
+	// TorqueCmd
+	HMI_TargetTorque				:	ARRAY[0..(AxisNumMax-1)] OF  INT := [AxisNumMax(0)]; 	// handle current cmd
+	AxisCurrentCmdSmooth			:	ARRAY[0..(AxisNumMax-1)] OF  LREAL :=  [AxisNumMax(0)]; // current cmd smooth
+	AxisTorqueCmd_fre				:	ARRAY[0..(AxisNumMax-1)] OF  LREAL :=  [AxisNumMax(1)]; // current cmd smooth frequency
+	AxisTorqueCmd_time				:	ARRAY[0..(AxisNumMax-1)] OF  LREAL :=  [AxisNumMax(0)]; // current cmd smooth time
+	
+	sRootPath						:	STRING(255):='C:\SiasunRobot\';
+	sServoConfigPath				:	STRING(255);
+	sServoDevicePath				:	STRING(255);
+	sServoJointListPath				:	ARRAY[0..5] OF STRING(255);
+	
+	fb_deviceJson					:	FB_JsonDomParser;
+	bDeviceJsonExec					:	BOOL:=FALSE;
+	bDeviceResult					:	BOOL:=FALSE;
+	bDeviceHasMember				:	BOOL;
+	DeviceJson						:	SJsonValue;
+	sDeviceJson		 				:	STRING(4096);
+	JointListJson					:	SJsonValue;
+	nJointListSize					:	UDINT;
+	JointListIt						:	SJsonAIterator;
+	JointListNameJson				:	ARRAY[0..5] OF SJsonValue;
+	JointListName					:	ARRAY[0..5] OF STRING(255);
+	
+	JsonCase						:	UDINT:=0;
+	JsonAxisNum						:	UDINT:=0;
+	
+	
+	
+	fb_JointJson					:	FB_JsonDomParser;
+	bJointJsonExec					:	BOOL:=FALSE;
+	bJointResult					:	BOOL:=FALSE;
+	bJointHasMember					:	BOOL;
+	JointJson						:	ARRAY [0..5] OF SJsonValue;
+	sJointJson						:	ARRAY [0..5] OF STRING(16384);
+	
+	JointServoParamJson				:	ARRAY [0..5] OF SJsonValue;
+	nJointServoParamSize			:	ARRAY [0..5] OF UDINT;
+	sJointServoParamJson			:	ARRAY [0..5] OF STRING(16384);
+	JointServoSingleParam			:	SJsonValue;
+	bJointServoSingleParamHasMember	:	BOOL:=FALSE;
+	JointServoParamIt				:	SJsonAIterator;
+	bJointServoId					:	SJsonValue;
+	bJointServoName					:	SJsonValue;
+	bJointServoValue				:	SJsonValue;
+	bJointServoQFmt					:	SJsonValue;
+	
+	ServoParameters					:	ARRAY[0..5,0..99] OF PARA;
+	SingleServoParameters			:	ARRAY [0..99] OF PARA;
+	a: INT := 0;
+	
+	InitPosition: ARRAY[0..5] OF LREAL := [42098*0.000686645507813, 43343*0.000686645507813, -100506*0.000686645507813, 46841*0.000686645507813, 46688*0.000686645507813, -215526*0.000686645507813];
+	fb_dragteaching:FB_dragTeaching13_Fuzzy(oid:=16#01010010);
+	input : BOOL;
+	Torque_hat						:	ARRAY [0..5] OF LREAL;
+	qd						:	ARRAY [0..5] OF LREAL;
+	D1: LREAL:= 50;
+	D2: LREAL:= 50;
+	D3: LREAL:= 50;
+	D4: LREAL:= 20;
+	D5: LREAL:= 12;
+	D6: LREAL:= 6;
+	
+	Md1: LREAL := 1;
+	Md2: LREAL := 1;
+	Md3: LREAL := 1;
+	Md4: LREAL := 1;
+	Md5: LREAL := 1;
+	Md6: LREAL := 1;
+	
+	Kp1: INT:= 50;//55
+	Kp2: INT:= 50;//50
+	Kp3: INT:= 50;//50
+	Kp4: INT:= 30;//50
+	Kp5: INT:= 25;//50
+	Kp6: INT:= 8;//50
+	
+	Kd1: INT:= 60;//60
+	Kd2: INT:= 60;//75
+	Kd3: INT:= 60;//60
+	Kd4: INT:= 30;//60
+	Kd5: INT:= 25;//55
+	Kd6: INT:= 15;//20
+	
+	
+	dragVelo1: LREAL;
+	MaxDragVelocity1: LREAL:= 50.0;  // 最大允许拖动速度 (单位：deg/s);
+
+	
+	dragVelo2: LREAL;
+	MaxDragVelocity2: LREAL:= 50.0;  // 最大允许拖动速度 (单位：deg/s);
+
+	dragVelo3: LREAL;
+	MaxDragVelocity3: LREAL:= 50.0;  // 最大允许拖动速度 (单位：deg/s);
+	
+	dragVelo4: LREAL;
+	MaxDragVelocity4: LREAL:= 50.0;  // 最大允许拖动速度 (单位：deg/s);
+	
+		dragVelo5: LREAL;
+	MaxDragVelocity5: LREAL;
+	
+	dragVelo6: LREAL;
+	MaxDragVelocity6: LREAL:= 50.0;  // 最大允许拖动速度 (单位：deg/s);
+
+	
+	input_showmodel: BOOL;
+	dragTorque: ARRAY[0..5] OF LREAL ;//约束输出力矩
+
+
+	
+	
+	move_init: ARRAY[0..5] OF BOOL;
+	move_init_done: ARRAY[0..5] OF BOOL;
+	home:BOOL;
+	Position_Desire: ARRAY [0..5] OF LREAL;
+END_VAR
+VAR CONSTANT
+	AxisNumMax			:	INT := 6;  // Axis num  
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fb_GetCurrentTaskIndex(index=>TaskIndex);
+PLCsycletime:=LREAL_TO_UDINT(_TaskInfo[TaskIndex].cycleTime/10000.0); // read plc sycletime
+
+//IF NOT SiasunServoTestStart THEN // Init button ,  fist  run plc; then  joint 48power on; last init button set true 
+//	End_config_path := CONCAT(sRootPath,End_config_name);
+//	End_T_sNetID := AmsNetID_TO_TAmsNetID(EndInfo.sNetID);
+//	IF EndInfo.EC_State = 8 AND EndInfo.WC_State = 0 THEN
+//		End_Foe_load(
+//			bExecute:=TRUE,
+//			sNetId:=End_T_sNetID,
+//			nSlaveAddr:=EndInfo.nSlaveAddr,
+//			sPathName:=End_config_path);
+//		IF NOT End_Foe_load.bError AND NOT End_Foe_load.bBusy THEN
+//			bEndConfigUploadSuccess := TRUE;
+//		END_IF
+//	ELSE
+//		END_FOE_LOAD(bExecute:=FALSE);
+//	END_IF
+//END_IF
+
+//IF bEndConfigUploadSuccess AND bEndConfigExtract THEN	//Please extract the config.tar.gz file in 'C:\SiasunRobots\' path, and set bEndConfigExtract to true to continue
+//	ParseJointServoParameters();
+//	FOR num :=0 TO (AxisNumMax - 1) BY 1 DO	
+//		FOR j := 0 TO 99 DO
+//			SingleServoParameters[j] := ServoParameters[num,j];
+//		END_FOR
+//		AxisOp[num].SetServoParametersList := SingleServoParameters;
+//		SIASUNservoWorkState[num] := 1;
+//	END_FOR
+//END_IF
+
+IF SiasunServoTestStart THEN
+	FOR num :=0 TO (AxisNumMax - 1) BY 1 DO	
+		SIASUNservoWorkState[num] := 1;
+	END_FOR
+	SiasunServoTestStart := FALSE;
+END_IF
+
+
+FOR num :=0 TO (AxisNumMax - 1) BY 1 DO	
+	CASE SIASUNservoWorkState[num] OF
+		1:
+			//check power	
+			ControllerResetAct();	
+			AxisOp[num].DataUpdate(num);
+			AxisInfo[num] := AxisOp[num].GetAxisInfo;
+			IF AxisOp[num].AxisDrive.WC_State = 0 THEN				
+				SIASUNservoWorkState[num] := 10;				
+			END_IF
+		10:  // prepare for para download
+			// get axis info
+			AxisOp[num].DataUpdate(num);
+			AxisInfo[num] := AxisOp[num].GetAxisInfo;
+			IF AxisOp[num].AxisDrive.WC_State = 0 THEN			
+				
+				//check EtherCat Communication State
+				IF AxisOp[num].AxisDrive.InfoData_StateJoint = 8 AND AxisOp[num].AxisDrive.StatusWord = 520 THEN
+					AxisPowerDone[num] := TRUE;
+					SIASUNservoWorkState[num] := 20;		
+				END_IF
+			ELSE
+				SIASUNservoWorkState[num] := 0;
+				SiasunServoTestStart := FALSE;
+				ControllerResetAct();  // 系统复位
+			END_IF			
+		20: // servo para download
+			// get axis info
+			AxisOp[num].DataUpdate(num);
+			AxisInfo[num] := AxisOp[num].GetAxisInfo;
+			IF AxisOp[num].AxisDrive.WC_State = 0  THEN				
+				// servo para download
+				IF NOT AxisOp[num].AxisInfo.AxisStatus.ConfigDone  THEN
+					AxisOp[num].AxisConfig(TRUE);  // servo para download																			
+				END_IF
+				IF AxisInfo[num].AxisStatus.ConfigDone THEN
+					SIASUNservoWorkState[num] := 50;
+				END_IF				
+			ELSE
+				SIASUNservoWorkState[num] := 0;
+				SiasunServoTestStart := FALSE;
+				ControllerResetAct();
+			END_IF
+			
+		30: // Enable
+			// get axis info
+			AxisOp[num].DataUpdate(num);
+			AxisInfo[num] := AxisOp[num].GetAxisInfo;
+			IF AxisOp[num].AxisDrive.WC_State = 0 THEN					
+				// Axis enable motion task
+				IF AxisOp[num].AxisInfo.AxisStatus.Ready THEN
+					AxisOp[num].Enable_PosMode(TRUE);  // enable 
+					IF AxisOp[num].AxisInfo.AxisStatus.Enabled THEN
+						SIASUNservoWorkState[num] := 50;
+					END_IF
+				END_IF
+				ErrorAct(); // check error 
+			ELSE
+				SIASUNservoWorkState[num] := 0;
+				SiasunServoTestStart := FALSE;
+				ControllerResetAct();
+			END_IF
+		40:
+			// disable
+			// get axis info
+			AxisOp[num].DataUpdate(num);
+			AxisInfo[num] := AxisOp[num].GetAxisInfo;
+			IF AxisOp[num].AxisDrive.WC_State = 0 THEN					
+				// Axis enable motion task
+				IF AxisOp[num].AxisInfo.AxisStatus.Ready THEN
+					AxisOp[num].Enable_PosMode(FALSE);  // enable 
+				END_IF
+			ELSE
+				SIASUNservoWorkState[num] := 0;
+				SiasunServoTestStart := FALSE;
+				ControllerResetAct();
+			END_IF
+		50: // move control 
+			// get axis info
+			//主要添加代码区
+			HMI_TargetTorqueCount();//运行控制器
+//			Showmodel_HMI_TargetTorqueCount();//运行控制器演示模式
+			AxisOp[num].DataUpdate(num);
+			AxisInfo[num] := AxisOp[num].GetAxisInfo;
+			IF AxisOp[num].AxisDrive.WC_State = 0 THEN								
+				//Motion State Machine Transaction occurs only when axis is NotMoving
+				IF AxisOp[num].AxisInfo.AxisStatus.Ready THEN
+					// enable 
+					AxisOp[num].Enable_PosMode(HMI_AxisEnable[num]);   // axis enable
+					// move conrol	
+					SiasunMotionTaskAct();  // axis ctrl mode change or  motion cmd set
+
+				END_IF
+				//Error 
+				ErrorAct(); 
+				// reset axis
+				AxisOp[num].Reset(HMI_Axis_reset[num]);  // axis reset 
+				TaskSateMachineAct();	 // motion task		
+			ELSE
+				SIASUNservoWorkState[num] := 0;	
+				SiasunServoTestStart := FALSE;
+				ControllerResetAct();		
+			END_IF			
+		
+	END_CASE
+END_FOR
+	
+
+	
+	]]></ST>
+    </Implementation>
+    <Action Name="AxisCurrentCmdSmoothAct" Id="{38640c64-7499-4d1f-80f6-2b4351b15378}">
+      <Implementation>
+        <ST><![CDATA[IF HMI_CurrentControlMove[num] THEN
+	AxisTorqueCmd_time[num] := AxisTorqueCmd_time[num] + 	UDINT_TO_LREAL(PLCsycletime)/1000	;
+	IF AxisTorqueCmd_time[num] < 1/(AxisTorqueCmd_fre[num]*2) THEN
+		AxisCurrentCmdSmooth[num] := (HMI_TargetTorque[num] - HMI_TargetTorque[num] * ( COS(2 * PI * AxisTorqueCmd_fre[num] * AxisTorqueCmd_time[num] )))/2;		
+	ELSE
+		AxisCurrentCmdSmooth[num] := HMI_TargetTorque[num];
+	END_IF
+	AxisMotionTaskState[num] := 11;
+ELSE
+	AxisTorqueCmd_time[num] := 0;
+	AxisCurrentCmdSmooth[num] := 0;
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="ControllerResetAct" Id="{5020be29-a212-4af6-afec-bf32634fd3fa}">
+      <Implementation>
+        <ST><![CDATA[// 初始化变量  或掉电后初始化
+HMI_AxisEnable[num] := FALSE;
+HMI_AxisJogFoward[num] := FALSE;
+HMI_AxisJogBackwards[num] := FALSE;
+HMI_AxisStop[num] := FALSE;
+HMI_CurrentControlMove[num] := FALSE;
+HMI_Abs_Motion[num] := FALSE;
+HMI_Tra_Motion[num] := FALSE;
+
+AxisOp[num].NotMovingReset();
+AxisOp[num].Parameters_Read(FALSE);
+AxisOp[num].Drive_Download(FALSE);
+AxisOp[num].Enable_PosMode(FALSE);
+
+HMI_Axis_reset[num] := FALSE;
+
+AxisTorqueCmd_time[num] := 0;
+AxisCurrentCmdSmooth[num] := 0;
+HMI_TargetTorque[num] := 0;
+
+HMI_CurrentControlMove[num] := FALSE;
+HMI_CurrentControlOfEnable[num] := FALSE;
+HMI_AxisCurrentControlFlag[num] := FALSE;
+AxisOp[num](AxisControlMode:= 1 );
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="ErrorAct" Id="{5c9b21d8-7191-433f-a341-ee1a902916c5}">
+      <Implementation>
+        <ST><![CDATA[IF AxisOp[num].AxisInfo.ErrId <> 0 THEN	
+	HMI_CurrentControlOfEnable[num] := FALSE;
+	HMI_AxisCurrentControlFlag[num] := FALSE;
+	HMI_TargetTorque[num] := 0;
+	AxisOp[num](AxisControlMode:= 1 );
+	HMI_AxisEnable[num] := FALSE;
+	HMI_CurrentControlMove[num] := FALSE;
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="ParseJointServoParameters" Id="{72224791-7540-4378-8485-36b27141ab3f}">
+      <Implementation>
+        <ST><![CDATA[
+CASE JsonCase OF
+0:
+	sServoConfigPath := CONCAT(sRootPath,'config\');
+	sServoDevicePath := CONCAT(sServoConfigPath,'device.json');
+	JsonCase := 1;
+1:	
+	bDeviceJsonExec:=TRUE;
+	bDeviceResult:=fb_deviceJson.LoadDocumentFromFile(
+	sFile:=sServoDevicePath,
+	bExec:=bDeviceJsonExec);
+	IF bDeviceResult THEN	
+		fb_deviceJson.CopyDocument(sDeviceJson,SIZEOF(sDeviceJson));
+		DeviceJson:=fb_deviceJson.ParseDocument(sDeviceJson);
+		bDeviceHasMember := fb_deviceJson.HasMember(DeviceJson,'joint_list');
+		IF bDeviceHasMember THEN
+			JointListJson:=fb_deviceJson.FindMember(DeviceJson,'joint_list');
+			nJointListSize := fb_deviceJson.GetArraySize(JointListJson);
+			JointListIt := fb_deviceJson.ArrayBegin(JointListJson);
+			FOR i := 0 TO nJointListSize-1 DO
+				JointListNameJson[i]:=fb_deviceJson.GetArrayValue(JointListIt);
+				JointListName[i]:=fb_deviceJson.GetString(JointListNameJson[i]);
+				sServoJointListPath[i]:=CONCAT(sServoConfigPath,JointListName[i]);		
+				JointListIt := fb_deviceJson.NextArray(JointListIt);
+			END_FOR
+		END_IF
+		JsonAxisNum:=0;
+		JsonCase := 10;
+	END_IF
+10:
+	bJointJsonExec:=TRUE;
+	bJointResult := fb_jointJson.LoadDocumentFromFile(sFile:=sServoJointListPath[JsonAxisNum],bExec:=bJointJsonExec);
+	IF bJointResult THEN
+		fb_jointJson.CopyDocument(sJointJson[JsonAxisNum],SIZEOF(sJointJson[JsonAxisNum]));
+		JointJson[JsonAxisNum]:=fb_jointJson.ParseDocument(sJointJson[JsonAxisNum]);
+		bJointHasMember:=fb_jointJson.HasMember(JointJson[JsonAxisNum],'servo_list');
+		IF bJointHasMember THEN
+			JointServoParamJson[JsonAxisNum] := fb_jointJson.FindMember(JointJson[JsonAxisNum],'servo_list');
+			nJointServoParamSize[JsonAxisNum] := fb_jointJson.GetArraySize(JointServoParamJson[JsonAxisNum]);
+			JointServoParamIt := fb_jointJson.ArrayBegin(JointServoParamJson[JsonAxisNum]);
+			FOR j := 0 TO nJointServoParamSize[JsonAxisNum]-1 DO
+				JointServoSingleParam:=fb_jointJson.GetArrayValue(JointServoParamIt);				
+				bJointServoSingleParamHasMember:=fb_jointJson.HasMember(JointServoSingleParam,'id');
+				IF bJointServoSingleParamHasMember THEN
+					bJointServoId := fb_jointJson.FindMember(JointServoSingleParam,'id');
+					ServoParameters[JsonAxisNum,j].Id := fb_jointJson.GetInt(bJointServoId);
+				END_IF			
+				bJointServoSingleParamHasMember:=fb_jointJson.HasMember(JointServoSingleParam,'name');
+				IF bJointServoSingleParamHasMember THEN
+					bJointServoName := fb_jointJson.FindMember(JointServoSingleParam,'name');
+					ServoParameters[JsonAxisNum,j].Name := fb_jointJson.GetString(bJointServoName);
+				END_IF			
+				bJointServoSingleParamHasMember:=fb_jointJson.HasMember(JointServoSingleParam,'value');
+				IF bJointServoSingleParamHasMember THEN
+					bJointServoValue := fb_jointJson.FindMember(JointServoSingleParam,'value');
+					ServoParameters[JsonAxisNum,j].Value := fb_jointJson.GetDouble(bJointServoValue);
+				END_IF				
+				bJointServoSingleParamHasMember:=fb_jointJson.HasMember(JointServoSingleParam,'qfmt');
+				IF bJointServoSingleParamHasMember THEN
+					bJointServoQFmt := fb_jointJson.FindMember(JointServoSingleParam,'qfmt');
+					ServoParameters[JsonAxisNum,j].qFmt := LREAL_TO_DINT(fb_jointJson.GetDouble(bJointServoQFmt));
+				END_IF			
+				JointServoParamIt := fb_jointJson.NextArray(JointServoParamIt);
+			END_FOR
+		END_IF
+		JsonAxisNum := JsonAxisNum + 1;
+		IF JsonAxisNum >= nJointListSize THEN
+			JsonCase := 11;
+		END_IF 
+	END_IF
+END_CASE
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="SiasunMotionTaskAct" Id="{b7a4a9bc-b0c7-49dd-bed2-b07df3f5c68c}">
+      <Implementation>
+        <ST><![CDATA[(*					Version 20181015 单关节运动状态机						
+状态机任务添加机制: 在关节NotMoving状态下添加状态转移开关判定并使关节
+AxisMotionStateMachine转换至对应状态机,在状态机中将对应任务功能块常置True开启
+, 并在NotMovingReset method下添加该功能块复位功能块对应method编写请按照标准形式: 
+当关节运动时将AxisStatus.NotMoving置false(目前完全由NC接管), 运动任务完成时自动
+置TRUE, 对所有运动功能复位, 等待下次运动功能调用. 当任务出错时将Error置True, 
+并输出对应ErrId与ErrType, 具体形式可参考任意任务method					*)
+
+//Motion State Machine Transaction occurs only when axis is NotMoving
+//开机启动默认电流模式，MoveMode = 8,可切换不同的AxisMotionTaskState执行点动，绝对运动、激励轨迹。、
+//HMI_CurrentControlOfEnable = TRUE,OP切换至电流模式，AxisMotionTaskState=11,HMI_CurrentControlMove=TURE,完成电流模式的切换
+IF AxisInfo[num].AxisStatus.NotMoving THEN
+	//in Notmoving status, reset all motion functions
+	IF AxisOp[num].AxisDrive.MoveMode = 8 THEN
+		AxisMotionTaskState[num] := 0;
+		HMI_AxisCurrentControlFlag[num] := FALSE;
+		IF NOT AxisInfo[num].ServoError AND AxisInfo[num].AxisStatus.Enabled THEN
+			IF HMI_AxisJogFoward[num] OR HMI_AxisJogBackwards[num] THEN
+					AxisMotionPara[num].TargetPosition1 := 0;
+					AxisMotionPara[num].TargetPosition2 := 0;
+					AxisMotionPara[num].TargetDistance := - AxisInfo[num].ActualPosition;
+					AxisOp[num].SetMotionPara := AxisMotionPara[num];
+					AxisMotionTaskState[num] := 1; // jog		
+			ELSIF HMI_Abs_Motion[num] THEN
+				AxisMotionTaskState[num] := 22; //Absolute Motion		
+			ELSIF HMI_Tra_Motion[num] THEN
+				AxisMotionTaskState[num] := 33; //Trajectory Motion
+			ELSIF HMI_Reverse_Motion[num] THEN
+				AxisMotionTaskState[num] := 44; 
+			ELSIF home THEN
+				AxisMotionTaskState[num] := 55;//回初始位置 
+				
+			END_IF			
+		END_IF
+		
+		// 模式切换
+		IF HMI_CurrentControlOfEnable[num] = TRUE  THEN  
+				// current torque control enable
+				AxisOp[num](AxisControlMode:= 2  );
+				// change to  current torque conrol task state machine 			
+				AxisMotionTaskState[num] := 11; 
+			 				
+		END_IF	
+	ELSIF AxisOp[num].AxisDrive.MoveMode = 10 THEN
+		AxisMotionTaskState[num] := 0;
+		HMI_AxisCurrentControlFlag[num] := TRUE;
+		IF NOT AxisInfo[num].ServoError AND AxisInfo[num].AxisStatus.Enabled THEN
+			// Torque cmd generation
+			
+			AxisCurrentCmdSmoothAct();	
+		END_IF
+		// 模式切换
+		IF HMI_CurrentControlOfEnable[num] = FALSE  THEN  //
+				// pos control enable 				
+				AxisOp[num](AxisControlMode:= 1 );
+				HMI_CurrentControlMove[num] := FALSE;
+				// change to  pos conrol task state machine 
+				AxisMotionTaskState[num] := 0;  
+		END_IF	
+	END_IF
+END_IF	
+
+AxisOp[Num].Stop(HMI_AxisStop[num]);]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="TaskSateMachineAct" Id="{dde5d1a5-fe32-4d07-901c-61a88e056943}">
+      <Implementation>
+        <ST><![CDATA[CASE AxisMotionTaskState[num] OF
+	0: // pos mode  not move		
+		AxisOp[num].NotMovingReset();
+	1: // jog
+		AxisOp[num].Jog(HMI_AxisJogFoward[num],HMI_AxisJogBackwards[num]);
+	
+	11: // current torque control  move 
+		AxisOp[num].PLCCurrentControl(
+			CurrentControlMoveEnable:= HMI_CurrentControlMove[num] , 
+			PLCcycleInput:= PLCsycletime, 
+			TargetToque:= LREAL_TO_INT(AxisCurrentCmdSmooth[num]));
+			
+			
+	22: //Absolute Motion	
+		IF AxisOp[num].AxisDrive.MoveAbsolute.Done THEN
+			HMI_Abs_Motion[num]:=FALSE;
+		END_IF
+		AxisOp[num].Absolute_Motion(HMI_Abs_Motion[num],InitPosition[num]); 
+	33: //Trajectory Motion	
+		IF AxisOp[num].AxisDrive.timer>=30 THEN
+			HMI_Tra_Motion[num]:=FALSE;
+		END_IF
+		AxisOp[num].Trajectory_Motion(HMI_Tra_Motion[num],num,InitPosition[num]); 
+		Position_Desire[num]:=Position_desire[num];
+	44://Reverse Motion	
+		IF AxisOp[num].AxisMotionPara.ReverseMotion_Velocity>=1.1 THEN
+			HMI_Reverse_Motion[num]:=FALSE;
+		END_IF
+		AxisOp[num].Reversing_Sequence(HMI_Reverse_Motion[num],InitPosition[num]); 
+	55://home
+ // 外部设定-- PTP of home       
+      move_init[num]:=TRUE;
+	  AxisOp[num].Home(axis_move_absolute:= move_init[num], Init_POS:= InitPosition[num], move_init_done=> move_init_done[num]);
+IF move_init_done[num] THEN 
+     move_init[num]:=FALSE;
+END_IF	  
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="MAIN">
+      <LineId Id="616" Count="0" />
+      <LineId Id="614" Count="0" />
+      <LineId Id="1560" Count="1" />
+      <LineId Id="1588" Count="0" />
+      <LineId Id="1697" Count="0" />
+      <LineId Id="1567" Count="0" />
+      <LineId Id="1582" Count="0" />
+      <LineId Id="1592" Count="0" />
+      <LineId Id="1584" Count="2" />
+      <LineId Id="1596" Count="0" />
+      <LineId Id="1593" Count="0" />
+      <LineId Id="1568" Count="0" />
+      <LineId Id="1578" Count="1" />
+      <LineId Id="1564" Count="0" />
+      <LineId Id="975" Count="0" />
+      <LineId Id="1798" Count="0" />
+      <LineId Id="1808" Count="7" />
+      <LineId Id="1796" Count="0" />
+      <LineId Id="1800" Count="0" />
+      <LineId Id="1910" Count="0" />
+      <LineId Id="1914" Count="0" />
+      <LineId Id="1919" Count="1" />
+      <LineId Id="1911" Count="2" />
+      <LineId Id="1795" Count="0" />
+      <LineId Id="1794" Count="0" />
+      <LineId Id="968" Count="0" />
+      <LineId Id="445" Count="0" />
+      <LineId Id="450" Count="0" />
+      <LineId Id="743" Count="0" />
+      <LineId Id="897" Count="0" />
+      <LineId Id="901" Count="0" />
+      <LineId Id="451" Count="2" />
+      <LineId Id="446" Count="0" />
+      <LineId Id="898" Count="2" />
+      <LineId Id="455" Count="0" />
+      <LineId Id="459" Count="0" />
+      <LineId Id="466" Count="2" />
+      <LineId Id="797" Count="0" />
+      <LineId Id="470" Count="0" />
+      <LineId Id="672" Count="1" />
+      <LineId Id="845" Count="0" />
+      <LineId Id="671" Count="0" />
+      <LineId Id="457" Count="0" />
+      <LineId Id="447" Count="0" />
+      <LineId Id="902" Count="2" />
+      <LineId Id="471" Count="0" />
+      <LineId Id="474" Count="0" />
+      <LineId Id="478" Count="2" />
+      <LineId Id="654" Count="0" />
+      <LineId Id="678" Count="1" />
+      <LineId Id="655" Count="1" />
+      <LineId Id="846" Count="0" />
+      <LineId Id="670" Count="0" />
+      <LineId Id="473" Count="0" />
+      <LineId Id="465" Count="0" />
+      <LineId Id="448" Count="0" />
+      <LineId Id="905" Count="2" />
+      <LineId Id="449" Count="0" />
+      <LineId Id="497" Count="2" />
+      <LineId Id="651" Count="2" />
+      <LineId Id="500" Count="0" />
+      <LineId Id="744" Count="0" />
+      <LineId Id="657" Count="1" />
+      <LineId Id="847" Count="0" />
+      <LineId Id="669" Count="0" />
+      <LineId Id="525" Count="0" />
+      <LineId Id="442" Count="0" />
+      <LineId Id="505" Count="0" />
+      <LineId Id="908" Count="2" />
+      <LineId Id="528" Count="0" />
+      <LineId Id="532" Count="3" />
+      <LineId Id="659" Count="1" />
+      <LineId Id="848" Count="0" />
+      <LineId Id="668" Count="0" />
+      <LineId Id="536" Count="0" />
+      <LineId Id="487" Count="0" />
+      <LineId Id="911" Count="1" />
+      <LineId Id="2413" Count="0" />
+      <LineId Id="2246" Count="0" />
+      <LineId Id="2412" Count="0" />
+      <LineId Id="913" Count="0" />
+      <LineId Id="510" Count="0" />
+      <LineId Id="541" Count="0" />
+      <LineId Id="543" Count="0" />
+      <LineId Id="676" Count="0" />
+      <LineId Id="675" Count="0" />
+      <LineId Id="650" Count="0" />
+      <LineId Id="647" Count="0" />
+      <LineId Id="564" Count="0" />
+      <LineId Id="2114" Count="0" />
+      <LineId Id="745" Count="1" />
+      <LineId Id="565" Count="0" />
+      <LineId Id="571" Count="1" />
+      <LineId Id="665" Count="1" />
+      <LineId Id="849" Count="0" />
+      <LineId Id="667" Count="0" />
+      <LineId Id="514" Count="0" />
+      <LineId Id="488" Count="0" />
+      <LineId Id="443" Count="0" />
+      <LineId Id="357" Count="0" />
+      <LineId Id="359" Count="0" />
+      <LineId Id="289" Count="0" />
+      <LineId Id="158" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.AxisCurrentCmdSmoothAct">
+      <LineId Id="4" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="27" Count="2" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="2" Count="1" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.ControllerResetAct">
+      <LineId Id="49" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="33" Count="2" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="41" Count="1" />
+      <LineId Id="52" Count="1" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="57" Count="1" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="60" Count="1" />
+      <LineId Id="55" Count="1" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.ErrorAct">
+      <LineId Id="12" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="2" Count="2" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.ParseJointServoParameters">
+      <LineId Id="2" Count="70" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.SiasunMotionTaskAct">
+      <LineId Id="2" Count="8" />
+      <LineId Id="174" Count="0" />
+      <LineId Id="176" Count="0" />
+      <LineId Id="11" Count="1" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="162" Count="0" />
+      <LineId Id="94" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="104" Count="5" />
+      <LineId Id="169" Count="1" />
+      <LineId Id="165" Count="1" />
+      <LineId Id="172" Count="0" />
+      <LineId Id="171" Count="0" />
+      <LineId Id="180" Count="2" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="177" Count="0" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="158" Count="1" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="95" Count="1" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="138" Count="0" />
+      <LineId Id="141" Count="0" />
+      <LineId Id="173" Count="0" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="126" Count="0" />
+      <LineId Id="164" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.TaskSateMachineAct">
+      <LineId Id="4" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="6" Count="2" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="20" Count="2" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="39" Count="1" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="32" Count="1" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="26" Count="2" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="35" Count="3" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="42" Count="6" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="Struct_ObservedParameters" Id="{733c883e-be0d-447b-94fe-2a1c48369e17}">
+    <Declaration><![CDATA[TYPE Struct_ObservedParameters :
+STRUCT
+	ADC_Iu						:	PARA;
+	ADC_Iv						:	PARA;
+	ADC_Iw						:	PARA;
+	ADC_Udc						:	PARA;
+	ADC_Temp_Board				:	PARA;
+	ADC_Temp_Air				:	PARA;
+	ADC_Temp_Motor				:	PARA;
+	ADC_Idc						:	PARA;
+	JointID						:	PARA;
+	AlgorithmVersion			:	PARA;
+	PolePairNumber				:	PARA;
+	MmPerPolePair				:	PARA;
+	LinesPerMm					:	PARA;
+	GainEndEnc					:	PARA;
+	GainMotEnc					:	PARA;
+	StatusRead					:	PARA;
+	tIconstRMS					:	PARA;
+	tImaxRMS					:	PARA;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

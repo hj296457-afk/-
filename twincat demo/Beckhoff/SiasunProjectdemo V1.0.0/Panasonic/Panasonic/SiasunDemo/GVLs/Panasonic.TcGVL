@@ -1,0 +1,112 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4018.5">
+  <GVL Name="Panasonic" Id="{6408a99d-5199-48c8-8360-d312682d5dc6}">
+    <Declaration><![CDATA[VAR_GLOBAL
+
+	//Joint GearRatio define joint real speed(not axis speed)
+	JointGearRatio:ARRAY[0..10]OF LREAL;
+	//Joint direction define joint real direcition(not axis direction)
+	JointDirection:ARRAY [0..10] OF INT;
+
+	//Target Axis will decide which axis to control
+	TargetID:INT;
+	TargetAxis:ARRAY[0..10]OF AXIS_REF;
+
+	Tick:LREAL:=0;
+	TickTotalSmall: LREAL:= 0.1;//Wait a little time
+	TickTotalBig: LREAL:= 3;//Power on time span
+	TickTotal: LREAL:= 0.5;//Power on time span
+	
+	//Axis descrption
+	AxisJobString:ARRAY[0..10]OF STRING(80);//Job description
+	AxisErrorString:ARRAY[0..10]OF STRING(80);//Error description
+	AxisControlWord AT%Q*:ARRAY[0..10]OF SINT;//Normally will be 8
+	
+	//Axis ExtFeed
+	TargetPosition:ARRAY[0..10]OF  LREAL;
+	TargetPositionNext:ARRAY[0..10]OF  LREAL;
+	TargetPositionDiff:ARRAY[0..10]OF  LREAL;
+	AxisFeedPositionAbsolute:ARRAY[0..10]OF  LREAL;
+	AxisFeedPositionAbsoluteBefore:ARRAY[0..10]OF LREAL;
+	AxisFeedPositionAbsoluteCompare:ARRAY[0..10]OF LREAL;
+	AxisFeedDirectionAbsolute:ARRAY[0..10]OF DINT;//1
+	AxisFeedSpeedAbsolute:ARRAY[0..10]OF LREAL;//V=600
+	AxisFeedAccelerationAbsolute:ARRAY[0..10]OF LREAL;//A=1200
+	
+	//Axis get error
+	AxisGetErrorModule:ARRAY[0..10]OF MC_ReadAxisError;
+	AxisErrorValid:ARRAY[0..10]OF BOOL;
+	AxisErrorBusy:ARRAY[0..10]OF BOOL;
+	AxisError:ARRAY[0..10]OF BOOL;
+	AxisErrorID:ARRAY[0..10]OF DWORD;
+	AxisErrorIDAxis:ARRAY[0..10]OF DWORD;
+
+	//Axis get position
+	AxisGetPositionModule:ARRAY[0..10]OF MC_ReadActualPosition;
+	AxisPositionValid:ARRAY[0..10]OF BOOL;
+	AxisPositionBusy:ARRAY[0..10]OF BOOL;
+	AxisPositionError:ARRAY[0..10]OF BOOL;
+	AxisPositionErrorID:ARRAY[0..10]OF UDINT;
+	AxisPosition:ARRAY[0..10]OF LREAL;
+	
+	//Axis get speed
+	AxisGetSpeedModule:ARRAY[0..10]OF MC_ReadActualVelocity;
+	AxisSpeedValid:ARRAY[0..10]OF BOOL;
+	AxisSpeedBusy:ARRAY[0..10]OF BOOL;
+	AxisSpeedError:ARRAY[0..10]OF BOOL;
+	AxisSpeedErrorID:ARRAY[0..10]OF UDINT;
+	AxisSpeed:ARRAY[0..10]OF LREAL;
+	
+	//Axis Reset(clear error)
+	AxisResetModule:ARRAY[0..10]OF MC_Reset;
+	AxisResetTrigger:ARRAY[0..10]OF  BOOL;//Trigger to reset
+	AxisResetDone:ARRAY[0..10]OF BOOL;
+	AxisResetBusy:ARRAY[0..10]OF BOOL;
+	AxisResetError:ARRAY[0..10]OF BOOL;
+	AxisResetErrorID:ARRAY[0..10]OF UDINT;
+	
+	//Axis Halt(stop immediately)
+	AxisHaltModule:ARRAY[0..10]OF MC_Halt;
+	AxisHaltTrigger:ARRAY[0..10]OF  BOOL;//Trigger to halt
+	AxisHaltAcceleration:ARRAY[0..10]OF  LREAL;//Halt acceleration
+	AxisHaltDone:ARRAY[0..10]OF BOOL;
+	AxisHaltBusy:ARRAY[0..10]OF BOOL;
+	AxisHaltActive:ARRAY[0..10]OF BOOL;
+	AxisHaltAborted:ARRAY[0..10]OF BOOL;
+	AxisHaltError:ARRAY[0..10]OF BOOL;
+	AxisHaltErrorID:ARRAY[0..10]OF UDINT;
+	
+	//Axis Power on
+	AxisPowerModule:ARRAY[0..10]OF MC_Power;
+	AxisEnableTrigger:ARRAY[0..10]OF  BOOL;//Trigger to power on
+	AxisPowerReady:ARRAY[0..10]OF BOOL;
+	AxisPowerBusy:ARRAY[0..10]OF BOOL;
+	AxisPowerActive:ARRAY[0..10]OF BOOL;
+	AxisPowerError:ARRAY[0..10]OF BOOL;
+	AxisPowerErrorID:ARRAY[0..10]OF UDINT;
+	
+	//Ext Enable
+	AxisExtFeedPointEnableSignal:BOOL;
+	AxisExtSetPointGenEnableModule:ARRAY[0..10]OF MC_ExtSetPointGenEnable;
+	AxisExtEnableTrigger:ARRAY[0..10]OF  BOOL;//Trigger to ExtFeed
+	AxisExtEnableDone:ARRAY[0..10]OF  BOOL;
+	AxisExtEnableBusy:ARRAY[0..10]OF  BOOL;
+	AxisExtEnableError:ARRAY[0..10]OF  BOOL;
+	AxisExtEnableErrorID:ARRAY[0..10]OF  UDINT;
+	AxisExtEnableEnabled:ARRAY[0..10]OF  BOOL;
+	
+	//Ext Disable
+	AxisExtFeedPointDisableSignal:BOOL;
+	AxisExtSetPointGenDisableModule:ARRAY[0..10]OF MC_ExtSetPointGenDisable;
+	AxisExtDisableTrigger:ARRAY[0..10]OF  BOOL;//Trigger to ExtFeed
+	AxisExtDisableDone:ARRAY[0..10]OF  BOOL;
+	AxisExtDisableBusy:ARRAY[0..10]OF  BOOL;
+	AxisExtDisableError:ARRAY[0..10]OF  BOOL;
+	AxisExtDisableErrorID:ARRAY[0..10]OF  UDINT;
+	AxisExtDisableEnabled:ARRAY[0..10]OF  BOOL;
+
+	
+
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

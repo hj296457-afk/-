@@ -1,0 +1,56 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="Struct_AxisDrive" Id="{36c30ec7-408f-44f0-98fd-314b32f69fd6}">
+    <Declaration><![CDATA[TYPE Struct_AxisDrive :
+STRUCT
+	Axis :  AXIS_REF;
+	
+	// -------------- NC 轴操作函数-------------------------------------------------------------------
+	Enable				:    	MC_Power;	   //  轴开启模块
+	AxisHalt			:     	MC_Halt;   //  轴停止
+	AxisReset			:     	MC_Reset; //  轴复位	
+	MoveJog				:		MC_Jog;   // jog
+	MoveAbsolute		:      	MC_MoveAbsolute; //位置模式运动模块
+	MoveAbsolute1		:      	MC_MoveAbsolute; //位置模式运动模块
+	MoveAbsolute2		:      	MC_MoveAbsolute; //位置模式运动模块
+	MoveVelocity		:      	MC_MoveVelocity; //速度模式运动模块
+	AxisExtSetPointGenEnable	:		MC_ExtSetPointGenEnable; //外部设定值发生器上使能
+	AxisExtSetPointGenDisable	:		MC_ExtSetPointGenDisable;//外部设定值发生器下使能
+	timer				: 		LREAL; //计时器
+	// state machine
+	Enable_State		:	INT := 0;
+	Reset_state			:	INT; 
+	GenEnable			:	BOOL;
+	GenDisable			:	BOOL;
+	
+	//-------------------------驱动器输入输出变量 单位：脉冲-------------------------------------------
+	MoveMode			AT %I*	:      	SINT;				(*运动模式*)
+	StatusWord  		AT %I*	:      	UINT;            	(*状态字*)
+	TorqueValue 		AT %I*	:     	INT;				(*驱动器返回力矩值*)
+ 	ServoErrId			AT %I* 	:   	UDINT;
+	
+	
+    Joint_VelocityActual 	AT %I* 	:    	DINT;           //  Joint Velocity
+	Joint_PositionActual 	AT %I* 	:    	DINT;           //  Joint Pos	
+	InfoData_StateJoint 	AT %I* 	:    	UINT;            //  slave op state
+    WC_State 				AT %I* 	:    	BIT;            // 参数可用标志 监控上电状态 1为断电 0为供电                           
+	
+	TargetMode				AT %Q*	:  	   SINT;			   (*运动模式置位*)	
+	Controlword				AT %Q*	:  	   UINT ;
+ 	TargetTorque 			AT %Q* 	: 	   INT;              //Target Torque（额定电流千分比）
+ 	TargetVelocity 			AT %Q* 	: 	   DINT;             //Target Velocity
+	TargetPosition 			AT %Q* 	: 	   DINT;             //Target Velocity
+
+   // systerm bar
+	sNetID				AT %I*	:  	 	AmsNetID;
+	nSlaveAddr			AT %I*	:  	 	UINT;
+	
+	//test 
+	ControlwordReadNChigh	AT %I*	:  	    USINT ;
+    ControlwordReadNClow	AT %I*	:  	    USINT ;    
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

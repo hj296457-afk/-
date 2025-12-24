@@ -1,0 +1,128 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4018.5">
+  <POU Name="Math" Id="{dd491f25-75b6-43a2-9cb9-45d81bd4d409}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC Math
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	
+PI:LREAL:=3.1415926535898;
+PIO2:LREAL:= 1.57079632679489;
+
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="ChangeEncoderToRealValue" Id="{64590ee2-7c49-48bf-9ebe-0d4388408b65}">
+      <Declaration><![CDATA[METHOD ChangeEncoderToRealValue : LREAL
+VAR_INPUT	
+EncoderValue:LREAL;
+EncoderType:INT;//For UR5 EncoderType=1 means big joint EncoderType=2 means small joint
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF EncoderType=1 THEN
+	//Change Encoder value to real value
+	ChangeEncoderToRealValue:=EncoderValue/JointGearRatio[0];
+ELSIF EncoderType=2 THEN
+	//Change Encoder value to real value
+	ChangeEncoderToRealValue:=EncoderValue/JointGearRatio[3];
+ELSE
+	;//Raise error
+END_IF
+
+
+RETURN;
+
+
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ChangeRealToEncoderValue" Id="{a2c12fbe-a1bc-4aa6-a4ac-b9c6ed36429c}">
+      <Declaration><![CDATA[METHOD PUBLIC ChangeRealToEncoderValue : LREAL
+VAR_INPUT
+	
+RealValue:LREAL;
+EncoderType:INT;//For UR5 EncoderType=1 means big joint EncoderType=2 means small joint
+
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF EncoderType=1 THEN
+	//Change Encoder value to real value
+	ChangeRealToEncoderValue:=RealValue*JointGearRatio[0];
+ELSIF EncoderType=2 THEN
+	//Change Encoder value to real value
+	ChangeRealToEncoderValue:=RealValue*JointGearRatio[3];
+ELSE
+	;//Raise error
+END_IF
+
+
+RETURN;
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="d2r" Id="{505726dc-c1d6-4adc-ab50-9fb5e61f28af}">
+      <Declaration><![CDATA[METHOD PUBLIC d2r : LREAL
+VAR_INPUT
+	Degree:LREAL;
+END_VAR
+
+VAR
+	Radius: LREAL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Radius:=(Degree/180)*PI;
+d2r:=Radius;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Pow" Id="{fb6e8f42-6f74-40d2-9b8d-82cb9382266a}">
+      <Declaration><![CDATA[METHOD PUBLIC Pow : LREAL
+VAR_INPUT
+	
+X:LREAL;
+Y:LREAL;
+
+END_VAR
+
+VAR
+	
+i:INT;
+Temp:LREAL;
+
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Pow:=EXPT(X,Y);
+
+RETURN;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="r2d" Id="{68d19af0-7781-4cd0-9b22-1178f785b7a8}">
+      <Declaration><![CDATA[METHOD PUBLIC r2d : LREAL
+VAR_INPUT
+	Radius:LREAL;
+END_VAR
+
+VAR
+	Degree: LREAL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Degree:=(Radius/PI)*180;
+r2d:=Degree;
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

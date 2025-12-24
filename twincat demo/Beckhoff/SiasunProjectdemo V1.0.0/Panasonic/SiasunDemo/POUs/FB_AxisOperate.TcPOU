@@ -1,0 +1,1262 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_AxisOperate" Id="{a34575f8-8a56-4c8e-a46b-3d1ec93c4b71}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_AxisOperate
+VAR_INPUT
+	AxisControlMode				:	INT;  // 1:  pos control  2: torque control
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	AxisRef										:	AXIS_REF;
+	//Enable
+	FB_ExtGenEnable								:	MC_ExtSetPointGenEnable;
+	FB_ExtGenDisable							:	MC_ExtSetPointGenDisable;
+	EnableTimer									:	TON;
+	// read or write xml para of servo
+	AxisXml 									: 	Struct_AxisXmlRW;
+	//PLC Version
+	PLC_Version									:	Struct_PLCVersion;
+	// Motion para
+	AxisMotionPara  							:	Struct_MotionPara;
+	// AxisInfo
+	AxisInfo									:	Struct_AxisInfo;
+	//AxisStatus
+	AxisStatus									:	Struct_AxisStatus;
+	// Axis DRive
+	AxisDrive									:	Struct_AxisDrive;
+	//SDO R/W
+	SDO_READ									:	FB_SDO_READ;
+	SDO_WRITE									:	FB_SDO_WRITE;
+	SDO_Buffer									:	DINT;
+	//Parameters Design Local(relating to Parameter buffer list)
+	ServoAccessParameters						:	Struct_ServoAccessParameters;
+	ObservedParameters							:	Struct_observedParameters;
+	count										:	INT;
+	bServoParametersSet							:	BOOL:=FALSE;
+	ServoParameters								:	ARRAY[0..99] OF PARA;
+	//Error
+	ServoError									:	BOOL;
+	Error										:	BOOL;
+	ErrId										:	DINT;
+	NCErrorTrig									:	R_trig;
+	EcComLoseTrig								:	F_trig;
+	EcComLinkTrig								:	R_trig;
+	// 
+	Axis_num									:	INT;
+	// Plc speed control
+	AxisControlModeVar							:	INT;
+	TargetCurrentOutput		 				    :   ARRAY [0..2] OF LREAL;
+	Integral				  					:	ARRAY[0..3] OF  LREAL;	
+	ErrOfSpeed									:	LREAL;
+
+	test1 : LREAL:=0;
+	test2 : LREAL:=0;
+	test3 : LREAL:=0;
+	
+	(*傅里叶级数参数*)
+	t 	  : LREAL;
+	omega: LREAL := pi/15;
+//TraPara: ARRAY[0..5, 0..6] OF LREAL:=[   0.0662 ,   -0.0642  ,  -0.1476  , 0.2446  ,  -0.1285 ,   -0.3109 ,  0.1071,
+// 0.1153,    -0.0807,    -0.0397,   0.0184 , 0.1685  ,  -0.1337 ,   -0.0855,
+// -0.1159,    0.0086,    0.0598,   -0.1741 ,   0.1077 ,   0.2901 ,  -0.0747,
+// 0.2371,    -0.1044,    -0.0835,    -0.1411,   0.1452 ,   -0.0960 ,   -0.0620,
+//  -0.2460,   0.0552,   0.0502,    -0.0016 ,   -0.0632 ,  0.2476 ,  0.0237,
+//  -0.2545,   0.0170,   0.0093,   0.2473 ,   -0.0334 ,  0.0072 ,  0.0166];//实验轨迹,取优化后系数的负值，-x,除了轴3，轴三是正的
+TraPara: ARRAY[0..5, 0..6] OF LREAL:=[   0.0015 ,   -0.0187  ,  0.0676  , -0.0357  ,  0.2127 ,   0.0342 ,  -0.1356,
+0.0485,    -0.0121,    -0.0274,   0.1737 , -0.0235  ,  -0.2222 ,   0.0197,
+-0.1282,    0.066,   0.0567,  0.0370 ,   -0.083 ,   0.0912 ,  0.0333,
+0.0861,    -0.0603,    -0.066,    0.0863,   0.0435 ,   -0.1724 ,   -0.0089,
+0.0084,   0.053,   0.1154,    0.0478 ,   0.0916 ,  -0.0562 ,  -0.0787,
+0.0611,   -0.0845,   -0.1133,   0.0235 ,   0.0141 , -0.0846 ,  0.0188];//测试轨迹,全45度
+ //TraPara: ARRAY[0..5, 0..6] OF LREAL:=[-0.0290 ,	0.0510 	,0.1741 ,	-0.1958, 	0.2306, 	0.2248 	,-0.1708 	,
+//-0.1338 ,	-0.0993 ,	-0.1468 ,	-0.1535 ,	-0.0144, 	0.2873, 	0.0427 ,
+//	0.0004 ,	0.1076 	,0.0151 	,-0.0004 ,	-0.3100 	,0.0000,	0.1708 ,
+//	-0.1930 ,	0.0271, 	0.0701 ,	0.1017 ,	0.0718, 	0.0913 ,	-0.0569 ,
+//	0.1965 ,	-0.0765 ,	-0.1024 ,	-0.1217 ,	0.0132 ,-0.0748 ,	0.0167 	,
+//-0.2693 ,	0.0523 ,	0.0421, 	0.1500 ,	-0.0723, 	0.1193 	,0.0307 ];//全90度
+
+	axis_move_reverse1						:	BOOL;
+	axis_move_reverse2						: BOOL;
+	move_reverse_lamp						: BOOL;
+	EdgeTrigger 							: R_TRIG; // 上升沿检测
+	
+	
+
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[CASE AxisControlMode OF 
+	0:
+		IF AxisInfo.AxisStatus.NotMoving AND AxisInfo.AxisStatus.Ready AND AxisInfo.AxisStatus.Enabled THEN
+			AxisControlModeVar := AxisControlMode;
+		ELSE
+			AxisControlModeVar := 0;
+			Error := TRUE;
+			ErrId := -2;
+		END_IF
+	1:		
+			IF AxisDrive.TargetMode <> 8 THEN
+				AxisDrive.TargetMode := 8;	
+				AxisDrive.TargetTorque := 0;
+				MC_ExtSetPointGenFeed(
+					Position:=AxisInfo.ActualPosition, 
+					Velocity:=1, 
+					Acceleration:=1 , 
+					Direction:=1 , 
+					Axis:=AxisRef);			
+			END_IF			
+		
+	2:
+		IF AxisDrive.TargetMode <> 10 THEN
+			AxisDrive.TargetMode := 10;
+			AxisDrive.TargetTorque := AxisDrive.TorqueValue ;
+		END_IF
+			
+END_CASE]]></ST>
+    </Implementation>
+    <Method Name="Absolute_Motion" Id="{80236b6c-abc5-4ea2-b8aa-dcd93eca0ba0}">
+      <Declaration><![CDATA[METHOD Absolute_Motion : BOOL
+VAR_INPUT
+	axis_move_absolute						:	BOOL;
+		Init_POS	:LREAL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[AxisDrive.MoveAbsolute( 
+	Axis:=AxisRef , 
+	Execute:=axis_move_absolute , 
+	Position:= Init_POS+AxisMotionPara.TargetPosition , 
+	Velocity:=AxisMotionPara.AbsMotion_Velocity , 
+	Acceleration:=AxisMotionPara.TargetAcceleration , 
+	Deceleration:=AxisMotionPara.TargetDeceleration , 
+	Jerk:= AxisMotionPara.TargetJerk );
+
+IF AxisDrive.MoveJog.Error THEN
+	Error := TRUE;
+	ErrId := AxisDrive.MoveAbsolute.ErrorID;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="AxisConfig" Id="{31a8278d-9ce4-43c5-bd0f-07fcf98c5caa}">
+      <Declaration><![CDATA[METHOD AxisConfig : BOOL
+VAR_INPUT
+	bExecute 							:	BOOL;
+END_VAR
+VAR
+	pos									:	INT;
+	temp								:	STRING;
+END_VAR
+(*					AxisConfig功能细则 Version20180831	
+	功能描述:在关节上电后自动(被动强制过程, 否则伺服控制器无法正常工作)进行  参数配置
+	使用方法:对成员函数AxisConfig进行调用
+	实现细则: 
+			 对单个关节实现上电后自动配置逻辑:
+			 ->调用内部成员函数ReadServoVersion读取伺服驱动器软件与硬件版本号
+			 ->等待标志位AxisStatus.SystemReady恢复FALSE
+			 ->调用内部成员函数Read_Parameter读取本地对应关节配置参数列表至PLC本地Buffer
+			 ->等待标志位AxisStatus.SystemReady恢复FALSE
+			 ->调用内部成员函数Download_Parameter将参数列表下载至伺服驱动器
+			 ->等待标志位AxisStatus.SystemReady恢复FALSE
+			 ->进行上位机配置参数文件与伺服软件兼容性校验
+			 ->若无任何报错并通过兼容性校验,AxisStatus.ConfigDone置True
+		 	 PS: 其中各内部成员还是使用方法与实现细则请参考相关描述文件
+	*)]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT bExecute THEN
+	AxisXml.Config_State := 0;
+END_IF
+CASE AxisXml.Config_State OF
+	0://init
+		AxisStatus.ConfigDone := FALSE;
+		IF NOT AxisStatus.SystemReady THEN
+			AxisStatus.SystemReady := TRUE;
+		END_IF
+		IF bExecute AND NOT Error THEN
+			ServoParametersList();
+			AxisXml.Config_State := 1;
+		END_IF
+	1://Read local file for current axis servo
+		//IF NOT bServoParametersSet THEN
+		Parameters_Read(TRUE);
+		IF AxisStatus.SystemReady AND NOT Error THEN
+			Parameters_Read(FALSE);
+			AxisXml.Config_State := 2;
+		END_IF
+		//ELSE
+		//	AxisXml.Config_State := 2;
+		//END_IF
+	2://Download Data to current axis servo
+		Drive_Download(TRUE);
+		IF AxisStatus.SystemReady AND NOT Error THEN
+			Drive_Download(FALSE);
+			AxisXml.Config_State := 3;
+		END_IF	
+	3://Axis Condig Done
+		AxisStatus.ConfigDone:=TRUE;	//Current axis servo config done
+END_CASE
+
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="DataUpdate" Id="{836f37c0-5003-4753-89ae-dea72bc9ba54}">
+      <Declaration><![CDATA[METHOD DataUpdate : BOOL
+VAR_INPUT
+	Axis_num_in							:	INT;
+END_VAR
+VAR
+	i									:	UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Axis Motion Imformation
+AxisInfo.Axis_OpMode := AxisDrive.MoveMode;
+AxisInfo.PositionCmd := DINT_TO_LREAL(LREAL_TO_DINT(AxisRef.NcToPlc.SetPos*524288))/524288;//同步插值指令到实际指令count间的精度损失
+AxisInfo.ActualPosition := AxisRef.NcToPlc.ActPos;
+AxisInfo.ActualPositionCNT := AxisRef.NcToPlc.ActPos/0.000686645507813;
+AxisInfo.ActualVelocity := AxisRef.NcToPlc.ActVelo;
+AxisInfo.ActualAcceleration := AxisRef.NcToPlc.ActAcc;
+AxisInfo.ActualTorque := AxisDrive.TorqueValue;
+AxisInfo.AxisInfoDataStateJoint :=   AxisDrive.InfoData_StateJoint;
+
+//  Axis motion cmd
+AxisInfo.VelocityCmd := AxisRef.NcToPlc.SetVelo;
+AxisInfo.Axis_TargetMode :=  AxisDrive.TargetMode;
+AxisInfo.TorqueCmd :=   AxisDrive.TargetTorque;
+//AxisDrive.TargetVelocity := LREAL_TO_DINT(AxisInfo.VelocityCmd);
+
+//PLC Version
+AxisInfo.PLC_Version := PLC_Version;
+//Axis Basic Parameter
+AxisRef.ReadStatus();
+NCErrorTrig(CLK:=AxisRef.Status.Error,Q=>);
+IF NCErrorTrig.Q AND NOT Error THEN
+	Error := TRUE;
+	ErrId := AxisRef.Status.ErrorID;
+END_IF
+Axis_num := Axis_num_in;
+AxisInfo.AxisNum := Axis_num;
+IF AxisInfo.AxisInfoDataStateJoint = 8 THEN
+	AxisInfo.Axis_EcComOp := TRUE;
+ELSE
+	AxisInfo.Axis_EcComOp := FALSE;
+END_IF
+//EtherCAT Communication Error 
+EcComLinkTrig(CLK:=AxisInfo.Axis_EcComOp,Q=>);
+IF EcComLinkTrig.Q THEN
+	AxisConfig(TRUE);
+	IF Error AND ErrId = -99 THEN
+		Error := FALSE;
+		ErrId := 0;
+	END_IF
+END_IF
+EcComLoseTrig(CLK:=AxisInfo.Axis_EcComOp,Q=>);
+IF EcComLoseTrig.Q THEN
+	FOR i := 0 TO 99 BY 1 DO
+		AxisXml.ServoParameters_temp[i].Value := -999;
+	END_FOR
+	AxisConfig(FALSE);
+	Error := TRUE;
+	ErrId := -99 ;  // lose communication
+END_IF
+//Axis Status
+AxisStatus.NotMoving := AxisRef.Status.NotMoving ;
+AxisStatus.Standstill := AxisStatus.ConfigDone AND AxisStatus.NotMoving AND AxisStatus.SystemReady;
+AxisStatus.Hasjob := NOT AxisStatus.Standstill;
+IF ((AxisDrive.StatusWord AND 16#FFF7) <> AxisDrive.StatusWord) AND (AxisDrive.ServoErrId = 0) THEN
+	AxisStatus.Ready := FALSE;
+ELSE
+	AxisStatus.Ready := TRUE;
+END_IF
+AxisInfo.AxisStatus := AxisStatus;
+
+//Servo Err
+AxisInfo.ServoError := ServoError;
+AxisInfo.Error := Error OR ServoError;
+IF ((AxisDrive.StatusWord AND 16#FFF7) <> AxisDrive.StatusWord) AND (AxisDrive.ServoErrId <> 0) AND (ErrId <> -99) THEN		//self defined error
+	ServoError := TRUE; 
+	AxisInfo.ErrId := AxisDrive.ServoErrId;
+	AxisInfo.ErrId_Hex := DWORD_TO_HEXSTR(UDINT_TO_DWORD(AxisDrive.ServoErrId),8,FALSE);
+ELSE
+	ServoError := FALSE;
+	AxisInfo.ErrId := ErrId;
+	AxisInfo.ErrId_Hex := DINT_TO_STRING(ErrId);
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Drive_Download" Id="{f7022b62-63b4-48f8-979d-b99f8e1dfa66}">
+      <Declaration><![CDATA[METHOD Drive_Download : BOOL
+VAR_INPUT
+	Download_Para								:	BOOL;
+END_VAR
+VAR
+	i											:	INT;
+END_VAR
+(*			Download Parameter功能细则 Version20181015	
+	功能描述:根据本地伺服配置参数文件中的参数列表进行参数下载, 保存至伺服驱动器
+	使用方法:对成员函数Download Parameter成员函数进行调用, 将输入Download_Para置True开始进行配置参数下载,下载过程中AxisStatus.SystemReady标志位将至FALSE,直至完成参数下载后置TRUE.将输入Download_Para置FALSE会复位功能函数
+	实现细则: 
+			 对单个配置参数的下载逻辑: 
+			 ->确认PLC本地参数列表Buffer中的参数ID
+			 ->若参数ID为有效ID,则提取其对应元素, 包括参数原始值及有效位参数
+			 ->通过SDO写操作发送Head Mailbox请求配置参数下载操作, 下发的4个字节Head Mailbox从低位到高位分别为(括号中内容为注释):1(cmd);参数ID号;1(默认取1);0x02(SDO写操作对应驱动器通信channel)
+			 ->确认Head Mailbox写操作完成
+			 ->通过SDO写操作发送第一包数据内容,下发的2个16位数据内容从低位到高位分别为:INT(ABS(value*2^q))
+			  (数据内容乘以2的有效位次方后取绝对值并将结果强制转换为int型);1/0(value符号标志位,若为负则取1,否则取0)
+			 ->确认第一包数据内容完成写操作
+			 ->通过SDO写操作发送第二包数据内容, 下发的2个16位数据内容从低位到高位分别为:参数ID号;1(写操作cmd);
+			 ->确认第二包数据内容写操作完成
+			 ->Finish
+			 完成参数配置逻辑:
+			 ->对单个配置参数下载进行循环, 直至在确认PLC本地参数列表Buffer中的参数ID为无效ID为止
+	*)]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Download_Para THEN
+	AxisXml.Download_State := 0;
+END_IF
+CASE AxisXml.Download_State OF
+0://init
+	SDO_WRITE(bExecute:=FALSE);
+	SDO_Buffer := 0;
+	count:=0;
+	IF Download_Para AND AxisStatus.SystemReady THEN
+		AxisStatus.SystemReady := FALSE;
+		AxisXml.Download_State:=10;	
+	END_IF
+10://check parameter id
+	AxisXml.Config_Para.Id := ServoParameters[count].Id;
+	IF AxisXml.Config_Para.Id <> -1 THEN
+		AxisXml.Config_Para.Value := ServoParameters[count].Value;
+		AxisXml.Config_Para.qFmt := ServoParameters[count].qFmt;
+		IF AxisXml.Config_Para.Value <> AxisXml.ServoParameters_temp[count].Value THEN
+			AxisXml.ServoParameters_temp[count].Value := AxisXml.Config_Para.Value;
+			AxisXml.Download_State:=11;
+		ELSE
+			count := count + 1;
+		END_IF
+	ELSE
+		AxisXml.Download_State:= 20;
+	END_IF
+11://Write Head Mailbox
+	SDO_Buffer := SHL(16#02,24)+SHL(1,16)+SHL(99,8)+1;	
+	SDO_WRITE(bExecute:= TRUE, sNetID:=AxisDrive.sNetID, nSlaveAddr:=AxisDrive.nSlaveAddr, Buffer:= SDO_Buffer);
+	IF NOT SDO_WRITE.bBusy AND NOT SDO_WRITE.bError AND SDO_WRITE.bDone THEN
+		SDO_WRITE(bExecute:=FALSE);
+		AxisXml.Download_State := 12;
+	END_IF
+12://Write Buffer[4..7]
+	IF AxisXml.Config_Para.Value < 0 THEN									//Buffer[6..7]=sign		Buffer[4..5]=value*2^qFmt
+		SDO_Buffer := SHL(1,16)+REAL_TO_DINT(ABS(AxisXml.Config_Para.Value)*EXPT(2,AxisXml.Config_Para.qFmt));
+	ELSE
+		SDO_Buffer := SHL(0,16)+REAL_TO_DINT(ABS(AxisXml.Config_Para.Value)*EXPT(2,AxisXml.Config_Para.qFmt));
+	END_IF
+	SDO_WRITE(bExecute:= TRUE, sNetID:=AxisDrive.sNetID, nSlaveAddr:=AxisDrive.nSlaveAddr, Buffer:= SDO_Buffer);
+	IF NOT SDO_WRITE.bBusy AND NOT SDO_WRITE.bError AND SDO_WRITE.bDone THEN
+		SDO_WRITE(bExecute:=FALSE);
+		AxisXml.Download_State := 13;
+	END_IF
+13://Write Buffer[8..11]
+	SDO_Buffer := SHL(16#1,16)+ AxisXml.Config_Para.Id;						//Buffer[10]=WriteCmd		Buffer[8..9]=Id
+	SDO_WRITE(bExecute:= TRUE, sNetID:=AxisDrive.sNetID, nSlaveAddr:=AxisDrive.nSlaveAddr, Buffer:= SDO_Buffer);
+	IF NOT SDO_WRITE.bBusy AND NOT SDO_WRITE.bError AND SDO_WRITE.bDone THEN
+		SDO_WRITE(bExecute:=FALSE);
+		count := count + 1;
+		AxisXml.Download_State := 10;
+	END_IF
+20://Set tFPGA_RequestParaFlag Parameter
+	AxisXml.Config_Para.Id := ServoAccessParameters.RequestParaFlag.Id;
+	AxisXml.Config_Para.Value := 1;
+	FOR i := 0 TO 99 BY 1 DO
+		IF ServoParameters[i].Id = AxisXml.Config_Para.Id THEN
+			AxisXml.Config_Para.qFmt := ServoParameters[i].qFmt;
+		END_IF
+	END_FOR
+	AxisXml.Download_State := 21;
+21://Write Head Mailbox
+	SDO_Buffer := SHL(16#02,24)+SHL(1,16)+SHL(99,8)+1;	
+	SDO_WRITE(bExecute:= TRUE, sNetID:=AxisDrive.sNetID, nSlaveAddr:=AxisDrive.nSlaveAddr, Buffer:= SDO_Buffer);
+	IF NOT SDO_WRITE.bBusy AND NOT SDO_WRITE.bError AND SDO_WRITE.bDone THEN
+		SDO_WRITE(bExecute:=FALSE);
+		AxisXml.Download_State := 22;
+	END_IF
+22://Write Buffer[4..7]		Buffer[6..7]=sign		Buffer[4..5]=value*2^qFmt
+	SDO_Buffer := SHL(0,16)+REAL_TO_DINT(ABS(AxisXml.Config_Para.Value)*EXPT(2,AxisXml.Config_Para.qFmt));						
+	SDO_WRITE(bExecute:= TRUE, sNetID:=AxisDrive.sNetID, nSlaveAddr:=AxisDrive.nSlaveAddr, Buffer:= SDO_Buffer);
+	IF NOT SDO_WRITE.bBusy AND NOT SDO_WRITE.bError AND SDO_WRITE.bDone THEN
+		SDO_WRITE(bExecute:=FALSE);
+		AxisXml.Download_State := 23;
+	END_IF
+23://Write Buffer[8..11]
+	SDO_Buffer := SHL(16#1,16)+AxisXml.Config_Para.Id;						//Buffer[10]=WriteCmd		Buffer[8..9]=Id
+	SDO_WRITE(bExecute:= TRUE, sNetID:=AxisDrive.sNetID, nSlaveAddr:=AxisDrive.nSlaveAddr, Buffer:= SDO_Buffer);
+	IF NOT SDO_WRITE.bBusy AND NOT SDO_WRITE.bError AND SDO_WRITE.bDone THEN
+		SDO_WRITE(bExecute:=FALSE);
+		AxisStatus.SystemReady := FALSE;
+		AxisXml.Download_State := 99;
+	END_IF
+99://finish & error
+	AxisStatus.SystemReady := TRUE;
+END_CASE
+
+IF SDO_WRITE.bError THEN
+	AxisStatus.SystemReady := TRUE;
+	Error := TRUE;
+	ErrId := SDO_WRITE.nErrId;
+	AxisXml.Download_State := 99;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Enable_PosMode" Id="{dd8b549a-2d4e-4e41-b127-39c74d2e76d0}">
+      <Declaration><![CDATA[METHOD Enable_PosMode : BOOL
+VAR_INPUT
+	go_enable						:	BOOL;
+END_VAR
+(*						Version20180828				
+	功能描述: 实现机器人控制器与关节实现通信后的使能与松抱闸
+	使用方法: 对成员函数Enable进行调用, 将输入go_enalbe置TRUE
+			 及会进行关节上使能与松抱闸操作, 将go_enable置false则会弹
+			 抱闸掉使能
+	实现细则: 
+			 上使能逻辑: 下发关节进入位置模式指令,此时关节控制权限仍归
+			 			伺服控制器->通过controlword上使能->通过
+						statusword确认上使能->PLC打开外部值发生器
+			 			->伺服驱动器控制关节进行松抱闸位移并松开抱闸,
+			 			同时PLC下发位置指令实时跟随关节实际位置,等待伺
+			 			服完成松抱闸操作->伺服进入位置模式,PLC接管实时
+			 			位置接口->PLC关闭外部值发生器
+			 下使能逻辑: PLC减速->通过controlword下发掉使能控制字->伺
+			 			服减速至0.				   	 				*)
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT go_enable THEN
+	AxisDrive.Enable_State := 0;
+END_IF
+CASE AxisDrive.Enable_State OF
+0://init
+	IF AxisDrive.MoveMode <> 0 THEN
+		AxisDrive.TargetMode := 0;
+	END_IF
+	AxisDrive.Enable(Axis:=AxisRef,Enable:=FALSE);
+	AxisStatus.Enabled := FALSE;
+	IF go_enable THEN
+		AxisDrive.Enable_State := 1;
+	END_IF
+1://Op mode set and enable axis
+	IF AxisDrive.TargetMode <> 8 THEN
+		AxisDrive.TargetMode := 8;
+	END_IF	
+	
+	AxisDrive.Enable(
+		Axis:= AxisRef, 
+		Enable:= go_enable, 
+		Enable_Positive:= TRUE, 
+		Enable_Negative:= TRUE, 
+		Override:= 100);
+		
+	IF AxisDrive.Enable.Error THEN
+		Error := TRUE;
+		ErrId := AxisDrive.Enable.ErrorID;
+	ELSIF AxisDrive.Enable.Status THEN
+		AxisDrive.Enable_State := 2;	
+	END_IF	
+2://Enable axis external setpoint generator
+	FB_ExtGenEnable(
+		Axis:= AxisRef, 
+		Execute:= TRUE, 
+		Position:= 100000, 
+		PositionType:= 1);
+	IF FB_ExtGenEnable.Done AND FB_ExtGenEnable.Enabled THEN
+		FB_ExtGenEnable(Axis:=AxisRef,Execute:=FALSE);
+		AxisDrive.Enable_State := 3;
+	ELSIF FB_ExtGenEnable.Error THEN
+		Error := TRUE;
+		ErrId := FB_ExtGenEnable.ErrorID;
+	END_IF
+3://make plc pos cmd follow actual position	
+	MC_ExtSetPointGenFeed(
+		Position:=AxisInfo.ActualPosition, 
+		Velocity:=1, 
+		Acceleration:=1 , 
+		Direction:=1 , 
+		Axis:=AxisRef);
+	IF AxisDrive.MoveMode = 8 THEN
+		AxisDrive.Enable_State := 4;
+	END_IF
+4://Disable external sepoint generator
+	FB_ExtGenDisable(
+		Axis:= AxisRef, 
+		Execute:= TRUE);
+	IF NOT FB_ExtGenDisable.Enabled AND FB_ExtGenDisable.Done THEN
+		FB_ExtGenDisable(Axis:=AxisRef,Execute:=FALSE);
+		AxisDrive.Enable_State := 5;
+	ELSIF FB_ExtGenDisable.Error THEN
+		Error := TRUE;
+		ErrId := FB_ExtGenDisable.ErrorID;
+	END_IF
+5://Delay 1S
+	EnableTimer(IN:=TRUE,PT:=TIME#1S,Q=>,ET=>);
+	IF EnableTimer.Q THEN
+		EnableTimer(IN:=FALSE);
+		AxisDrive.Enable_State := 99;
+	END_IF
+99://finish
+	AxisStatus.Enabled := TRUE;
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="GetAxisInfo" Id="{06589403-157a-4020-9ff3-aa3b12fcec75}">
+      <Declaration><![CDATA[PROPERTY GetAxisInfo : Struct_AxisInfo]]></Declaration>
+      <Get Name="Get" Id="{f3bd0e7d-2304-4990-b5c0-fc8af63886df}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[GetAxisInfo := AxisInfo;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="Home" Id="{5285e4a4-362b-462c-bf97-9fdfea94df8e}">
+      <Declaration><![CDATA[METHOD Home : BOOL
+VAR_INPUT
+	axis_move_absolute						:	BOOL;
+	Init_POS	:LREAL;
+END_VAR
+VAR_OUTPUT
+	move_init_done						:	BOOL;//初始运动完成
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+AxisDrive.MoveAbsolute(
+	Axis:= AxisRef, 
+	Execute:= axis_move_absolute, 
+	Position:= Init_POS, 
+	Velocity:= 1, 
+	Acceleration:= , 
+	Deceleration:= , 
+	Jerk:= , 
+	BufferMode:= , 
+	Options:= , 
+	Done=> move_init_done, 
+	Busy=> , 
+	Active=> , 
+	CommandAborted=> , 
+	Error=> , 
+	ErrorID=> );]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Jog" Id="{5fd4f874-9bb2-4348-99a8-838a175cee8f}">
+      <Declaration><![CDATA[METHOD Jog : BOOL
+VAR_INPUT
+	axis_jog_foward						:	BOOL;
+	axis_jog_backwards					:	BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[AxisDrive.MoveJog(
+	Axis:= AxisRef, 
+	JogForward:= axis_jog_foward, 
+	JogBackwards:= axis_jog_backwards, 
+	Mode:= MC_JOGMODE_CONTINOUS, 
+	Position:= , 
+	Velocity:= AxisMotionPara.TargetVelocity, 
+	Acceleration:= AxisMotionPara.TargetAcceleration, 
+	Deceleration:= AxisMotionPara.TargetDeceleration, 
+	Jerk:= AxisMotionPara.TargetJerk);
+	
+IF AxisDrive.MoveJog.Error THEN
+	Error := TRUE;
+	ErrId := AxisDrive.MoveJog.ErrorID;
+
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="NotMovingReset" Id="{8cf9089c-d82e-4f21-ac7b-9a3dce48d2c0}">
+      <Declaration><![CDATA[METHOD NotMovingReset : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF AxisDrive.MoveMode = 8 THEN
+	Jog(FALSE,FALSE);
+	Stop(FALSE);
+ELSIF AxisDrive.MoveMode = 10 THEN
+	PLCCurrentControl(
+			CurrentControlMoveEnable:= FALSE , 
+			PLCcycleInput:= 4, 
+			TargetToque:= 0);
+END_IF
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Parameters_Read" Id="{593ee8fd-03a5-4db4-837c-d5e56eda6e5d}">
+      <Declaration><![CDATA[METHOD Parameters_Read : BOOL//Read Axis Servo Parameter From Local File
+VAR_INPUT
+	Read_Para									:	BOOL;
+END_VAR
+VAR
+	i											:	UINT;
+END_VAR
+(*				Read Parameter功能细则 Version20181015		
+	功能描述:读取计算机本地保存的关节伺服驱动器配置参数文件
+	使用方法:将关节配置参数的.txt文件保存在C:\SiasunRobot\servo_config文件夹内,并确保文件名为"Axis(关节序号).xml(如:Axis1.xml)",对成员函数Read_Parameter进行调用,将输入Read_Para置TRUE,开始读取过程,待标志位AxisStatus.SystemReady回归TRUE代表完成读取;将输入Read_Para置TRUEead_Para置FALSE复位功能函数.
+	实现细则: 
+			 配置参数文件读取逻辑:
+			 ->通过dataentry/PLC_Version读取xml中上位机版本号信息,供兼容性判定用
+			 ->通过dataentry/CRC读取xml中CRC校验码信息,供CRC校验用
+			 ->通过dataentry/ServoParameters读取伺服配置参数列表,供驱动器下载用
+			 ->计算读取到的配置参数列表所对应的CRC,并与读取到的CRC校验码进行比对,进行校验,若通过则读取完成,否则CRC校验错误
+	*)]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[if not Read_Para then
+	AxisXml.Read_State := 0;
+END_IF
+CASE AxisXml.Read_State OF
+0://init
+	AxisXml.XmlRead(bExecute:=FALSE);
+	IF Read_Para AND AxisStatus.SystemReady THEN
+		AxisXml.CRC_Cal := 0;
+		AxisStatus.SystemReady := FALSE;
+		AxisXml.Read_State := 10;
+	END_IF
+10://Read PLC Version
+	AxisXml.XmlRead(
+		pSymAddr:= ADR(PLC_Version), 
+		cbSymSize:= SIZEOF(PLC_Version), 
+		sFilePath:= AxisXml.FilePath[Axis_Num], 
+		sXPath:= '/dataentry/PLC_Version', 
+		bExecute:= TRUE);
+	IF NOT AxisXml.XmlRead.bError AND NOT AxisXml.XmlRead.bBusy THEN
+		AxisXml.XmlRead(bExecute:=FALSE);
+		AxisXml.Read_State := 11;
+	END_IF
+11://Read CRC Code
+	AxisXml.XmlRead(
+		pSymAddr:= ADR(AxisXml.CRC_Read), 
+		cbSymSize:= SIZEOF(AxisXml.CRC_Read), 
+		sFilePath:= AxisXml.FilePath[Axis_Num], 
+		sXPath:= '/dataentry/CRC', 
+		bExecute:= TRUE);
+	IF NOT AxisXml.XmlRead.bError AND NOT AxisXml.XmlRead.bBusy THEN
+		AxisXml.XmlRead(bExecute:=FALSE);
+		AxisXml.Read_State := 12;
+	END_IF
+12://Read Servo Parameters List
+	AxisXml.XmlRead(
+		pSymAddr:= ADR(ServoParameters), 
+		cbSymSize:= SIZEOF(ServoParameters), 
+		sFilePath:= AxisXml.FilePath[Axis_Num], 
+		sXPath:= '/dataentry/ServoParameters', 
+		bExecute:= TRUE);
+	IF NOT AxisXml.XmlRead.bError AND NOT AxisXml.XmlRead.bBusy THEN
+		AxisXml.XmlRead(bExecute:=FALSE);
+		AxisXml.Read_State := 20;
+	END_IF
+20://CRC Verification
+	//FOR i := 0 TO 99 BY 1 DO
+	//	AxisXml.CRC_Cal := AxisXml.CRC_Cal + DINT_TO_UDINT(ServoParameters[i].Id + REAL_TO_DINT(ServoParameters[i].Value) + ServoParameters[i].qFmt);
+	//END_FOR
+	//AxisXml.CRC_Cal := AxisXml.CRC_Cal + PLC_Version.Servo_Compatibility_high + PLC_Version.Servo_Compatibility_low + PLC_Version.PLC_Function;
+	//AxisXml.CRC_Cal := NOT(AxisXml.CRC_cal);
+	//AxisXml.CRC_Cal := WORD_TO_UDINT(F_DATA_TO_CRC16_CCITT(ADR(AxisXml.CRC_Cal),SIZEOF(AxisXml.CRC_Cal),16#0000));
+	//IF AxisXml.CRC_Read <> AxisXml.CRC_cal THEN
+	//	Error := TRUE;
+	//	ErrId := 20;
+	//END_IF
+	AxisXml.Read_state := 99;
+99://finish
+	AxisStatus.SystemReady := TRUE;
+END_CASE
+IF AxisXml.XmlRead.bError THEN
+	AxisStatus.SystemReady := TRUE;
+	Error := TRUE;
+	ErrId := AxisXml.XmlRead.nErrId;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="PLCCurrentControl" Id="{f835caf3-03e1-4b7f-ac79-0bb0d7fea741}">
+      <Declaration><![CDATA[METHOD PLCCurrentControl : BOOL  
+VAR_INPUT
+	CurrentControlMoveEnable		:	BOOL;
+	PLCcycleInput					:	UDINT; // ms
+	TargetToque						:	INT;
+END_VAR
+VAR
+	PLCcycleReal			:	LREAL;
+	SpeedControloutput		:	LREAL;
+	SpeedControloutputLIMIT	:	LREAL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[PLCcycleReal := UDINT_TO_LREAL(PLCcycleInput/1000);
+
+IF CurrentControlMoveEnable THEN	
+	// SafeSetting安全
+	IF TargetToque > 2000 THEN
+		TargetToque:= 2000;
+	ELSIF TargetToque< -2000 THEN
+		TargetToque:= -2000;
+	END_IF	
+	
+	
+	PLCSpeedControl(
+		SpeedControlEnable:= TRUE, 
+		PLCcycle:= PLCcycleReal, 
+		TargetSpeed:= 0, 
+		ActualVelocity:= AxisInfo.ActualVelocity, 
+		ba:= 0.01, 
+		ksa:= 0.0, 
+		kisa:= 0, 
+		OutputOfControl=> SpeedControloutput);
+	
+	SpeedControloutputLIMIT := LIMIT(-32768,SpeedControloutput,32767) ;
+	test2 := SpeedControloutputLIMIT;
+	AxisDrive.TargetTorque := TargetToque + LREAL_TO_INT(SpeedControloutputLIMIT); 
+	
+ELSE
+	PLCSpeedControl(
+		SpeedControlEnable:= FALSE, 
+		PLCcycle:= PLCcycleReal, 
+		TargetSpeed:= 0, 
+		ActualVelocity:= AxisInfo.ActualVelocity, 
+		ba:= 0.01, 
+		ksa:= 0, 
+		kisa:= 0, 
+		OutputOfControl=> SpeedControloutput);
+	TargetToque :=0;
+	SpeedControloutputLIMIT := 0 ;
+	SpeedControloutput :=0;
+	AxisDrive.TargetTorque := 0;
+END_IF
+
+
+test1 := SpeedControloutput;
+test3 := TargetToque;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="PLCSpeedControl" Id="{928c5205-573e-41d8-8b07-4bd677cd01c2}">
+      <Declaration><![CDATA[METHOD PLCSpeedControl : BOOL
+VAR_INPUT
+	SpeedControlEnable			:	BOOL;
+	PLCcycle			        :	LREAL;
+	TargetSpeed					:	LREAL;   // 低速端 速度  °/s 设定值
+	ActualVelocity				:	LREAL;   // 低速端速度 反馈值
+	ba							:	LREAL;
+	ksa							:	LREAL;
+	kisa						:	LREAL;
+END_VAR
+VAR_OUTPUT
+	OutputOfControl			    :	LREAL;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF SpeedControlEnable THEN
+	//ActualVelocity:=LIMT()	
+	ErrOfSpeed:=TargetSpeed-ActualVelocity;
+
+	Integral[0]:=ErrOfSpeed*PLCcycle+Integral[1];
+	
+	Integral[1]:=LIMIT(-1000,Integral[0],1000);
+	
+	Integral[2]:=Integral[1]*PLCcycle+Integral[3];
+	
+	Integral[3]:=LIMIT(-1000,Integral[2],1000);
+	
+	TargetCurrentOutput[0]:=ba*ErrOfSpeed+ksa*Integral[1]+kisa*Integral[3];
+	
+	TargetCurrentOutput[1]:=0.8*TargetCurrentOutput[0]+0.2*TargetCurrentOutput[2];
+	TargetCurrentOutput[2]:=TargetCurrentOutput[1];
+	
+	OutputOfControl:=LIMIT(-10,TargetCurrentOutput[1],10);
+ELSE
+	OutputOfControl:=0;
+	Integral[0] := 0;
+	Integral[1] := 0;
+	Integral[2] := 0;
+	Integral[3] := 0;
+	TargetCurrentOutput[0] := 0;
+	TargetCurrentOutput[1] := 0;
+	TargetCurrentOutput[2] := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Reset" Id="{7db3ee28-fe56-41b8-87f6-fba649a4cd1e}">
+      <Declaration><![CDATA[METHOD Reset : BOOL
+VAR_INPUT
+	Axis_Reset						:	BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[AxisDrive.AxisReset(
+	Axis:= AxisRef, 
+	Execute:= Axis_Reset, 
+	Done=> , 
+	Busy=> , 
+	Error=> , 
+	ErrorID=> );
+	
+IF AxisDrive.AxisReset.Error THEN
+	Error := TRUE;
+	ErrId := AxisDrive.AxisReset.ErrorID;
+	AxisDrive.AxisReset(Axis:=AxisRef,Execute:=FALSE);
+ELSIF AxisDrive.AxisReset.Done AND NOT AxisDrive.AxisReset.Busy THEN
+	Error := FALSE;
+	ErrId := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Reversing_Sequence" Id="{e125e985-9c91-4824-ab2c-092fee668c82}">
+      <Declaration><![CDATA[METHOD Reversing_Sequence : BOOL
+VAR_INPUT
+		Reversing_Sequence_Switch:BOOL;
+		Init_POS	:LREAL;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[move_reverse_lamp:=Reversing_Sequence_Switch;
+EdgeTrigger(CLK :=  Reversing_Sequence_Switch);
+IF EdgeTrigger.Q  THEN
+	axis_move_reverse1:=TRUE;
+END_IF
+
+IF Reversing_Sequence_Switch THEN
+	
+
+IF AxisDrive.MoveAbsolute1.Done THEN
+	axis_move_reverse1:=FALSE;
+	axis_move_reverse2:=TRUE;
+ELSIF AxisDrive.MoveAbsolute2.Done THEN
+	axis_move_reverse1:=TRUE;
+	axis_move_reverse2:=FALSE;
+END_IF
+	   
+IF AxisDrive.MoveAbsolute2.Done THEN
+	AxisMotionPara.ReverseMotion_Velocity:=AxisMotionPara.ReverseMotion_Velocity+0.1;
+END_IF
+
+IF AxisMotionPara.ReverseMotion_Velocity>=1.1 THEN
+	axis_move_reverse1:=FALSE;
+	axis_move_reverse2:=FALSE;
+END_IF
+
+AxisDrive.MoveAbsolute1(
+	Axis:=AxisRef , 
+	Execute:=axis_move_reverse1 , 
+	Position:=Init_POS+AxisMotionPara.TargetPosition1 , 
+	Velocity:=AxisMotionPara.ReverseMotion_Velocity , 
+	Acceleration:=AxisMotionPara.TargetAcceleration , 
+	Deceleration:=AxisMotionPara.TargetDeceleration , 
+	Jerk:= AxisMotionPara.TargetJerk  );
+	
+AxisDrive.MoveAbsolute2(
+	Axis:=AxisRef , 
+	Execute:=axis_move_reverse2 , 
+	Position:=Init_POS+AxisMotionPara.TargetPosition2 , 
+	Velocity:=AxisMotionPara.ReverseMotion_Velocity , 
+	Acceleration:=AxisMotionPara.TargetAcceleration , 
+	Deceleration:=AxisMotionPara.TargetDeceleration , 
+	Jerk:= AxisMotionPara.TargetJerk  );
+END_IF	
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ServoParametersList" Id="{b4d92b9c-1ca5-40f1-b36c-28ce54ca080d}">
+      <Declaration><![CDATA[METHOD PRIVATE ServoParametersList : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Servo Cmd
+ServoAccessParameters.ServoMode.Id := 84;
+ServoAccessParameters.IsLocalCmd.Id := 61;
+ServoAccessParameters.ServoOn.Id := 0;
+ServoAccessParameters.RequestParaFlag.Id := 2;
+//Position Control
+ServoAccessParameters.BandWidth_Vel.Id := 17;
+ServoAccessParameters.BandWidth_Posi.Id := 18;
+ServoAccessParameters.BandWidth_Posi_int.Id := 23;
+ServoAccessParameters.Low_Pass_BW.Id := 50;
+ServoAccessParameters.DriectionReverse.Id := 19;
+
+//Observed Parameters
+ObservedParameters.ADC_Iu.Id := 65;
+ObservedParameters.ADC_Iv.Id := 72;
+ObservedParameters.ADC_Iw.Id := 73;
+ObservedParameters.ADC_Udc.Id := 74;
+ObservedParameters.ADC_Temp_Board.Id := 77;
+ObservedParameters.ADC_Temp_Air.Id := 69;
+ObservedParameters.ADC_Temp_Motor.Id := 75;
+ObservedParameters.ADC_Idc.Id := 76;
+ObservedParameters.JointID.Id := 60;
+ObservedParameters.AlgorithmVersion.Id := 78;
+ObservedParameters.PolePairNumber.Id := 46;
+ObservedParameters.MmPerPolePair.Id := 11;
+ObservedParameters.LinesPerMm.Id := 33;
+ObservedParameters.GainEndEnc.Id := 36;
+ObservedParameters.GainMotEnc.Id := 37;
+ObservedParameters.StatusRead.Id := 62;
+ObservedParameters.tIconstRMS.Id := 4;
+ObservedParameters.tImaxRMS.Id := 5;
+//Self Defined
+ServoAccessParameters.StatusRequest.Id := 63;
+//Error Protection
+ServoAccessParameters.Over_Speed.Id := 58;
+ServoAccessParameters.Over_PE.Id := 59;
+ServoAccessParameters.Under_Volt.Id := 55;
+ServoAccessParameters.Over_Volt.Id := 56;
+ServoAccessParameters.Over_Curr.Id := 57;
+ServoAccessParameters.Over_CrossPulseErr.Id := 38;
+//Fault Mask
+ServoAccessParameters.FaultMask_Low.Id := 54;
+ServoAccessParameters.FaultMask_High.Id := 41;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="SetMotionPara" Id="{f4edec02-2c7e-497a-9397-15f70564a40a}">
+      <Declaration><![CDATA[PROPERTY SetMotionPara : Struct_MotionPara]]></Declaration>
+      <Get Name="Get" Id="{c660b168-27d7-43df-9501-a061d6778247}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[SetMotionPara := AxisMotionPara;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{f0d3a9d8-f9cc-4eec-a01d-d3347778ff3f}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IF ABS(SetMotionPara.TargetPosition1) <= 720 AND ABS(SetMotionPara.TargetPosition2) <= 720 AND ABS(SetMotionPara.TargetDistance+AxisInfo.ActualPosition) <=360 THEN
+	AxisMotionPara := SetMotionPara;
+ELSE
+	AxisMotionPara.TargetPosition1 := AxisInfo.ActualPosition;
+	AxisMotionPara.TargetPosition2 := AxisInfo.ActualPosition;
+	AxisMotionPara.TargetDistance := 0;
+	Error := TRUE;	
+	ErrId := 0;
+END_IF
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="SetServoParametersList" Id="{b14fab85-dd1f-4cb4-a401-34b50c51a224}">
+      <Declaration><![CDATA[PROPERTY SetServoParametersList : ARRAY[0..99] OF PARA;]]></Declaration>
+      <Set Name="Set" Id="{f2d36202-b432-4e9a-b88c-dfdbd7679972}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ServoParameters:=SetServoParametersList;
+bServoParametersSet:=TRUE;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="Stop" Id="{e934b2c8-d19f-4f2a-99d1-63741a5d8428}">
+      <Declaration><![CDATA[METHOD Stop : BOOL
+VAR_INPUT
+	axis_stop								:	BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF AxisDrive.MoveMode = 8 THEN
+	AxisDrive.AxisHalt(
+	Axis:= AxisRef, 
+	Execute:= axis_stop, 
+	Deceleration:= AxisMotionPara.StopDeceleration, 
+	Jerk:= AxisMotionPara.TargetJerk);
+	
+	IF AxisDrive.AxisHalt.Error THEN
+		Error := TRUE;
+		ErrId := AxisDrive.AxisHalt.ErrorID;
+	END_IF
+
+ELSIF AxisDrive.MoveMode = 10 THEN 
+	AxisDrive.TargetTorque := 0;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Trajectory_Motion" Id="{d89b7fdc-6f23-4f9c-84ab-8b75a592c634}">
+      <Declaration><![CDATA[METHOD Trajectory_Motion : BOOL
+VAR_INPUT
+	gen_enable	:BOOL;
+	jointNum		:INT;
+	Init_POS	:LREAL;
+END_VAR
+VAR_OUTPUT
+	Position_desire: ARRAY[0..5] OF LREAL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF gen_enable THEN
+	AxisDrive.GenEnable:=TRUE;
+	AxisDrive.GenDisable:=FALSE;
+ELSIF NOT gen_enable THEN
+	AxisDrive.GenEnable:=FALSE;
+	AxisDrive.GenDisable:=TRUE;
+END_IF
+AxisDrive.AxisExtSetPointGenEnable(
+	Axis:=AxisRef , 
+	Execute:= AxisDrive.GenEnable, 
+	Position:=100000 , 
+	PositionType:= 1 );
+AxisDrive.AxisExtSetPointGenDisable(
+	Axis:=AxisRef , 
+	Execute:=AxisDrive.GenDisable);
+IF AxisDrive.AxisExtSetPointGenEnable.Error THEN
+		Error := TRUE;
+		ErrId := AxisDrive.AxisExtSetPointGenEnable.ErrorID;	
+ELSIF AxisDrive.AxisExtSetPointGenDisable.Error THEN
+		Error := TRUE;
+		ErrId := AxisDrive.AxisExtSetPointGenDisable.ErrorID;	
+END_IF	
+IF  AxisDrive.AxisExtSetPointGenEnable.Enabled AND AxisDrive.Enable.Status THEN
+			AxisDrive.timer:=AxisDrive.timer+0.004;
+			t:=AxisDrive.timer;	
+MC_ExtSetPointGenFeed(
+		Position:= Init_POS+180/pi*(TraPara[jointNum,0]/omega*SIN(omega*t) -TraPara[jointNum,1]/omega*COS(omega*t) +TraPara[jointNum,2]+TraPara[jointNum,3]/(2*omega)*SIN(2*omega*t) -TraPara[jointNum,4]/(2*omega)*COS(2*omega*t) +TraPara[jointNum,2]+TraPara[jointNum,5]/(3*omega)*SIN(3*omega*t) -TraPara[jointNum,6]/(3*omega)*COS(3*omega*t) +TraPara[jointNum,2]),
+		Velocity:= 180/pi*(TraPara[jointNum,0]*COS(omega*t) +TraPara[jointNum,1]*SIN(omega*t)+TraPara[jointNum,3]*COS(2*omega*t) +TraPara[jointNum,4]*SIN(2*omega*t)+TraPara[jointNum,5]*COS(3*omega*t) +TraPara[jointNum,6]*SIN(3*omega*t)),
+		Acceleration:=180/pi*(-TraPara[jointNum,0]*omega*SIN(omega*t) +TraPara[jointNum,1]*omega*COS(omega*t) -TraPara[jointNum,3]*(2*omega)*SIN(2*omega*t) +TraPara[jointNum,4]*(2*omega)*COS(2*omega*t) -TraPara[jointNum,5]*(3*omega)*SIN(3*omega*t) +TraPara[jointNum,6]*(3*omega)*COS(3*omega*t)) ,
+		Direction:=1 , 
+		Axis:=AxisRef);	//循环六次jointNum
+//MC_ExtSetPointGenFeed(
+//		Position:= Init_POS+110+180/pi*0.2-COS(0.2*pi*t)*180/pi*0.2,
+//		Velocity:= 0.2*pi*SIN(0.2*pi*t)*180/pi*0.2,
+//		Acceleration:=-0.2*pi*0.2*pi*COS(0.2*pi*t)*180/pi*0.2,
+//		Direction:=1 , 
+//		Axis:=AxisRef);	//测试
+
+		Position_desire[jointNum-1]:=Init_POS+180/pi*(TraPara[jointNum,0]/omega*SIN(omega*t) -TraPara[jointNum,1]/omega*COS(omega*t) +TraPara[jointNum,2]+TraPara[jointNum,3]/(2*omega)*SIN(2*omega*t) -TraPara[jointNum,4]/(2*omega)*COS(2*omega*t) +TraPara[jointNum,2]+TraPara[jointNum,5]/(3*omega)*SIN(3*omega*t) -TraPara[jointNum,6]/(3*omega)*COS(3*omega*t) +TraPara[jointNum,2]);
+
+END_IF
+		
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_AxisOperate">
+      <LineId Id="65" Count="5" />
+      <LineId Id="72" Count="4" />
+      <LineId Id="166" Count="1" />
+      <LineId Id="160" Count="4" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="81" Count="5" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Absolute_Motion">
+      <LineId Id="7" Count="7" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="27" Count="2" />
+      <LineId Id="26" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.AxisConfig">
+      <LineId Id="3" Count="10" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="239" Count="0" />
+      <LineId Id="211" Count="3" />
+      <LineId Id="208" Count="0" />
+      <LineId Id="215" Count="1" />
+      <LineId Id="66" Count="14" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.DataUpdate">
+      <LineId Id="146" Count="7" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="154" Count="1" />
+      <LineId Id="161" Count="0" />
+      <LineId Id="156" Count="2" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="3" Count="6" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="16" Count="7" />
+      <LineId Id="171" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="27" Count="9" />
+      <LineId Id="38" Count="10" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="69" Count="1" />
+      <LineId Id="72" Count="3" />
+      <LineId Id="77" Count="3" />
+      <LineId Id="82" Count="1" />
+      <LineId Id="162" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Drive_Download">
+      <LineId Id="3" Count="9" />
+      <LineId Id="17" Count="80" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Enable_PosMode">
+      <LineId Id="3" Count="13" />
+      <LineId Id="102" Count="1" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="20" Count="10" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="37" Count="12" />
+      <LineId Id="51" Count="21" />
+      <LineId Id="74" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.GetAxisInfo.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Home">
+      <LineId Id="13" Count="15" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Jog">
+      <LineId Id="3" Count="14" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.NotMovingReset">
+      <LineId Id="13" Count="0" />
+      <LineId Id="15" Count="5" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="10" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Parameters_Read">
+      <LineId Id="3" Count="52" />
+      <LineId Id="57" Count="8" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.PLCCurrentControl">
+      <LineId Id="70" Count="1" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="46" Count="2" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="108" Count="1" />
+      <LineId Id="59" Count="7" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="75" Count="7" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="83" Count="1" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="32" Count="4" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.PLCSpeedControl">
+      <LineId Id="21" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="22" Count="16" />
+      <LineId Id="41" Count="6" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Reset">
+      <LineId Id="3" Count="10" />
+      <LineId Id="15" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Reversing_Sequence">
+      <LineId Id="116" Count="0" />
+      <LineId Id="118" Count="2" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="104" Count="0" />
+      <LineId Id="122" Count="1" />
+      <LineId Id="91" Count="1" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="93" Count="1" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="83" Count="1" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="113" Count="2" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="6" Count="7" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="62" Count="6" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.ServoParametersList">
+      <LineId Id="3" Count="10" />
+      <LineId Id="15" Count="30" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.SetMotionPara.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.SetMotionPara.Set">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.SetServoParametersList.Set">
+      <LineId Id="2" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Stop">
+      <LineId Id="16" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="23" Count="8" />
+      <LineId Id="20" Count="2" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_AxisOperate.Trajectory_Motion">
+      <LineId Id="7" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="80" Count="1" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="131" Count="4" />
+      <LineId Id="119" Count="2" />
+      <LineId Id="102" Count="2" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="106" Count="1" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="141" Count="0" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="110" Count="2" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="149" Count="3" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="166" Count="0" />
+      <LineId Id="164" Count="0" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>
